@@ -3,7 +3,8 @@
 import os
 import runpy
 
+launcher = os.path.realpath(__file__)
 runpy.run_path(
-    os.path.join(os.path.dirname(__file__), "..", "lib", "agent_trash.py"),
+    os.path.join(os.path.dirname(launcher), "..", "lib", "agent_trash.py"),
     run_name="__main__",
 )

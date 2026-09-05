@@ -51,6 +51,24 @@ def cmd_put(args):
             sys.stderr.write("agent-trash: no such path: {0}\n".format(src))
             return 1
         sources.append(src)
+    for index, src in enumerate(sources):
+        for other in sources[:index]:
+            if src == other:
+                sys.stderr.write(
+                    "agent-trash: duplicate source path: {0}\n".format(src)
+                )
+                return 1
+            try:
+                common = os.path.commonpath((src, other))
+            except ValueError:
+                continue
+            if common == src or common == other:
+                sys.stderr.write(
+                    "agent-trash: overlapping source paths: {0} and {1}\n".format(
+                        other, src
+                    )
+                )
+                return 1
     entry_id = time.strftime("%Y%m%d-%H%M%S") + "-{0}".format(os.getpid())
     entry_dir = os.path.join(TRASH_DIR, entry_id)
     os.makedirs(entry_dir)

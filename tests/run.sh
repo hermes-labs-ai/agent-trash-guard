@@ -112,6 +112,10 @@ assert codex_entry["hooks"][0]["command"] == "python3 ${PLUGIN_ROOT}/hooks/trash
 codex_market = json.loads((root / ".agents" / "plugins" / "marketplace.json").read_text())
 assert codex_market["interface"]["displayName"] == "Hermes Labs"
 assert codex_market["plugins"][0]["name"] == "agent-trash-guard"
+assert codex_market["plugins"][0]["source"] == {
+    "source": "local",
+    "path": "./",
+}
 assert codex_market["plugins"][0]["policy"] == {
     "installation": "AVAILABLE",
     "authentication": "ON_INSTALL",
@@ -121,6 +125,7 @@ assert codex_market["plugins"][0]["category"] == "Productivity"
 gemini = json.loads((root / "integrations" / "gemini" / "hooks.json").read_text())
 gemini_entry = gemini["hooks"]["BeforeTool"][0]
 assert gemini_entry["matcher"] == "run_shell_command"
+assert gemini_entry["hooks"][0]["timeout"] == 8000
 PY
 check "adapter metadata is valid JSON" 0 "$?"
 
@@ -135,6 +140,29 @@ python3 "$LEGACY_CLI" --help 2>&1 | grep -q "agent-trash"
 check "legacy claude-trash command remains compatible" 0 "$?"
 
 # --- Gemini installer: isolated registration and removal ---
+mkdir -p "$WORK/gemini"
+python3 - "$WORK/gemini/settings.json" "$REPO_DIR" <<'PY'
+import json
+import pathlib
+import sys
+owned_command = f"python3 {sys.argv[2]}/hooks/trash_guard.py"
+pathlib.Path(sys.argv[1]).write_text(json.dumps({"hooks": {"BeforeTool": [{
+    "matcher": "run_shell_command",
+    "hooks": [
+        {
+            "name": "agent-trash-guard",
+            "type": "command",
+            "command": "python3 /foreign/trash_guard.py",
+            "timeout": 1234,
+        },
+        {
+            "name": "agent-trash-guard",
+            "type": "prompt",
+            "command": owned_command,
+        },
+    ],
+}]}}))
+PY
 GEMINI_SETTINGS="$WORK/gemini/settings.json" BIN_DIR="$WORK/bin" \
   "$REPO_DIR/integrations/gemini/install.sh" >/dev/null
 python3 - "$WORK/gemini/settings.json" "$REPO_DIR" <<'PY'
@@ -142,9 +170,14 @@ import json
 import pathlib
 import sys
 settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
-entry = settings["hooks"]["BeforeTool"][0]
+groups = settings["hooks"]["BeforeTool"]
+assert len(groups) == 2
+assert groups[0]["hooks"][0]["command"] == "python3 /foreign/trash_guard.py"
+assert groups[0]["hooks"][1]["type"] == "prompt"
+entry = groups[1]
 assert entry["matcher"] == "run_shell_command"
 assert entry["hooks"][0]["command"] == f"python3 {sys.argv[2]}/hooks/trash_guard.py"
+assert entry["hooks"][0]["timeout"] == 8000
 PY
 check "Gemini installer registers native hook" 0 "$?"
 GEMINI_SETTINGS="$WORK/gemini/settings.json" BIN_DIR="$WORK/bin" \
@@ -154,9 +187,12 @@ import json
 import pathlib
 import sys
 settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
-assert not settings.get("hooks", {}).get("BeforeTool")
+groups = settings["hooks"]["BeforeTool"]
+assert len(groups) == 1
+assert groups[0]["hooks"][0]["command"] == "python3 /foreign/trash_guard.py"
+assert groups[0]["hooks"][1]["type"] == "prompt"
 PY
-check "Gemini uninstaller removes native hook" 0 "$?"
+check "Gemini uninstaller removes only its exact native hook" 0 "$?"
 check "Gemini uninstaller removes owned CLI link" 1 "$(exists_exit "$WORK/bin/agent-trash")"
 
 # Gemini install refuses a file or foreign symlink and uninstall preserves it.
@@ -176,6 +212,39 @@ GEMINI_SETTINGS="$WORK/gemini-collision/settings.json" \
 check "Gemini uninstaller preserves foreign CLI link" 0 \
   "$(exists_exit "$WORK/gemini-collision-bin/agent-trash")"
 
+# Gemini quotes paths before persisting a shell command.
+SPECIAL_ROOT="$WORK/repo space;literal"
+ln -s "$REPO_DIR" "$SPECIAL_ROOT"
+AGENT_TRASH_GUARD_ROOT="$SPECIAL_ROOT" \
+  GEMINI_SETTINGS="$WORK/gemini-special/settings.json" \
+  BIN_DIR="$WORK/gemini-special-bin" \
+  "$REPO_DIR/integrations/gemini/install.sh" >/dev/null
+python3 - "$WORK/gemini-special/settings.json" "$SPECIAL_ROOT" <<'PY'
+import json
+import pathlib
+import shlex
+import sys
+settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
+command = settings["hooks"]["BeforeTool"][0]["hooks"][0]["command"]
+expected = "python3 " + shlex.quote(str(pathlib.Path(sys.argv[2]) / "hooks" / "trash_guard.py"))
+assert command == expected
+PY
+check "Gemini installer shell-quotes special repo path" 0 "$?"
+SPECIAL_COMMAND="$(python3 - "$WORK/gemini-special/settings.json" <<'PY'
+import json
+import pathlib
+import sys
+settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
+print(settings["hooks"]["BeforeTool"][0]["hooks"][0]["command"])
+PY
+)"
+printf '%s' "$(gemini_event 'rm -rf build')" | sh -c "$SPECIAL_COMMAND" 2>/dev/null
+check "quoted Gemini hook command executes and blocks" 2 "$?"
+AGENT_TRASH_GUARD_ROOT="$SPECIAL_ROOT" \
+  GEMINI_SETTINGS="$WORK/gemini-special/settings.json" \
+  BIN_DIR="$WORK/gemini-special-bin" \
+  "$REPO_DIR/integrations/gemini/uninstall.sh" >/dev/null
+
 # Manual Claude install has the same collision and ownership guarantees.
 mkdir -p "$WORK/claude-collision-bin"
 printf '%s\n' "keep me too" > "$WORK/claude-collision-bin/agent-trash"
@@ -193,6 +262,10 @@ check "Claude installer creates owned neutral link" 0 \
   "$(exists_exit "$WORK/claude-owned-bin/agent-trash")"
 check "Claude installer creates owned legacy link" 0 \
   "$(exists_exit "$WORK/claude-owned-bin/claude-trash")"
+"$WORK/claude-owned-bin/agent-trash" --help 2>&1 | grep -q "agent-trash"
+check "neutral CLI runs through installed symlink" 0 "$?"
+"$WORK/claude-owned-bin/claude-trash" --help 2>&1 | grep -q "agent-trash"
+check "legacy CLI runs through installed symlink" 0 "$?"
 CLAUDE_SETTINGS="$WORK/claude-owned/settings.json" BIN_DIR="$WORK/claude-owned-bin" \
   "$REPO_DIR/uninstall.sh" >/dev/null
 check "Claude uninstaller removes owned neutral link" 1 \
@@ -209,6 +282,29 @@ check "Claude uninstaller preserves foreign neutral link" 0 \
   "$(exists_exit "$WORK/claude-foreign-bin/agent-trash")"
 check "Claude uninstaller preserves foreign legacy link" 0 \
   "$(exists_exit "$WORK/claude-foreign-bin/claude-trash")"
+
+# --- cli: invalid source sets are rejected atomically ---
+mkdir -p "$WORK/atomic/project/dir"
+printf '%s\n' "atomic" > "$WORK/atomic/project/file.txt"
+printf '%s\n' "nested" > "$WORK/atomic/project/dir/child.txt"
+AGENT_TRASH_DIR="$WORK/atomic/trash-duplicate" \
+  python3 "$CLI" put "$WORK/atomic/project/file.txt" "$WORK/atomic/project/file.txt" \
+  >/dev/null 2>&1
+check "put rejects duplicate source paths" 1 "$?"
+check "duplicate refusal leaves source untouched" 0 \
+  "$(exists_exit "$WORK/atomic/project/file.txt")"
+check "duplicate refusal creates no trash entry" 1 \
+  "$(exists_exit "$WORK/atomic/trash-duplicate")"
+AGENT_TRASH_DIR="$WORK/atomic/trash-overlap" \
+  python3 "$CLI" put "$WORK/atomic/project/dir" "$WORK/atomic/project/dir/child.txt" \
+  >/dev/null 2>&1
+check "put rejects ancestor-descendant source paths" 1 "$?"
+check "overlap refusal leaves ancestor untouched" 0 \
+  "$(exists_exit "$WORK/atomic/project/dir")"
+check "overlap refusal leaves descendant untouched" 0 \
+  "$(exists_exit "$WORK/atomic/project/dir/child.txt")"
+check "overlap refusal creates no trash entry" 1 \
+  "$(exists_exit "$WORK/atomic/trash-overlap")"
 
 # --- cli: put / list / restore roundtrip ---
 mkdir -p "$WORK/project/sub"

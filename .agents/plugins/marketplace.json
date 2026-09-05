@@ -12,7 +12,10 @@
       "name": "agent-trash-guard",
       "description": "Recoverable deletion guard for coding agents.",
       "version": "0.1.0",
-      "source": "./",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"

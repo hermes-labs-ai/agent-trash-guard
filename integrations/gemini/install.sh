@@ -2,7 +2,7 @@
 # Install the native Gemini CLI BeforeTool adapter without touching Claude settings.
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_DIR="${AGENT_TRASH_GUARD_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 SETTINGS="${GEMINI_SETTINGS:-$HOME/.gemini/settings.json}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
@@ -29,6 +29,7 @@ fi
 python3 - "$SETTINGS" "$REPO_DIR" <<'PY'
 import json
 import os
+import shlex
 import sys
 
 settings_path, repo_dir = sys.argv[1], sys.argv[2]
@@ -37,24 +38,32 @@ if os.path.isfile(settings_path):
     with open(settings_path) as handle:
         settings = json.load(handle)
 
+template_path = os.path.join(repo_dir, "integrations", "gemini", "hooks.json")
+with open(template_path) as handle:
+    template = json.load(handle)
+owned_group = template["hooks"]["BeforeTool"][0]
+owned_hook = owned_group["hooks"][0]
+hook_path = os.path.join(repo_dir, "hooks", "trash_guard.py")
+owned_hook["command"] = owned_hook["command"].replace(
+    "__AGENT_TRASH_GUARD_ROOT__/hooks/trash_guard.py", shlex.quote(hook_path)
+)
+
+
+def is_owned(hook):
+    return (
+        hook.get("name") == owned_hook["name"]
+        and hook.get("type") == owned_hook["type"]
+        and hook.get("command") == owned_hook["command"]
+    )
+
 groups = settings.setdefault("hooks", {}).setdefault("BeforeTool", [])
-command = "python3 " + os.path.join(repo_dir, "hooks", "trash_guard.py")
 for group in groups:
     for hook in group.get("hooks", []):
-        if hook.get("name") == "agent-trash-guard":
+        if is_owned(hook):
             print("Gemini hook already registered; settings unchanged")
             raise SystemExit(0)
 
-groups.append({
-    "matcher": "run_shell_command",
-    "hooks": [{
-        "name": "agent-trash-guard",
-        "type": "command",
-        "command": command,
-        "timeout": 8,
-        "description": "Block permanent deletes and recommend recoverable trash",
-    }],
-})
+groups.append(owned_group)
 with open(settings_path, "w") as handle:
     json.dump(settings, handle, indent=2)
     handle.write("\n")
