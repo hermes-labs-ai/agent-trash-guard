@@ -40,6 +40,11 @@ check "hook blocks git clean -fd"   2 "$(hook_exit "$(bash_event 'git clean -fd'
 check "hook blocks unlink"          2 "$(hook_exit "$(bash_event 'unlink ./link')")"
 check "hook blocks shred"           2 "$(hook_exit "$(bash_event 'shred -u secret.txt')")"
 check "hook blocks absolute rm"     2 "$(hook_exit "$(bash_event '/bin/rm -rf build')")"
+check "hook blocks rm after then"   2 "$(hook_exit "$(bash_event 'if true; then rm -rf x; fi')")"
+check "hook blocks rm after do"     2 "$(hook_exit "$(bash_event 'for f in *; do rm -f x; done')")"
+check "hook blocks rm after else"   2 "$(hook_exit "$(bash_event 'if true; then echo hi; else rm -rf x; fi')")"
+check "hook blocks rm in parens"    2 "$(hook_exit "$(bash_event '( rm -rf x )')")"
+check "hook blocks rm in braces"    2 "$(hook_exit "$(bash_event '{ rm -rf x; }')")"
 
 # --- hook: allows everything else ---
 check "hook allows ls"              0 "$(hook_exit "$(bash_event 'ls -la')")"

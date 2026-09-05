@@ -12,10 +12,11 @@ import sys
 DELETE_CMDS = {"rm", "unlink", "shred", "rmdir"}
 
 # A token in command position: start of input, or after ; & | && || newline,
-# subshell/backtick, optionally preceded by common wrappers.
+# subshell/backtick/paren/brace, optionally preceded by common wrappers or
+# shell keywords (then/do/else/elif) that introduce a new command.
 COMMAND_POSITION = re.compile(
-    r"(?:^|[;&|]|\$\(|`|\n)\s*"
-    r"(?:(?:sudo|command|nohup|time)\s+|env\s+(?:\w+=\S*\s+)*|xargs\s+(?:-\S+\s+)*)*"
+    r"(?:^|[;&|(){}]|\$\(|`|\n)\s*"
+    r"(?:(?:sudo|command|nohup|time|then|do|else|elif)\s+|env\s+(?:\w+=\S*\s+)*|xargs\s+(?:-\S+\s+)*)*"
     r"([A-Za-z0-9_./-]+)"
 )
 
