@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse hook for Claude Code: block permanent-delete commands, point to `claude-trash put`.
+"""Cross-agent hook: block permanent-delete commands and point to recoverable trash.
 
-Reads the PreToolUse event JSON on stdin. Exit 0 allows the tool call;
-exit 2 blocks it and feeds stderr back to Claude as guidance.
+Reads a Claude/Codex PreToolUse or Gemini BeforeTool event on stdin. Exit 0
+allows the tool call; exit 2 blocks it and feeds stderr back to the agent.
 """
 import json
 import os
@@ -47,7 +47,7 @@ def main():
         event = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
-    if event.get("tool_name") != "Bash":
+    if event.get("tool_name") not in {"Bash", "run_shell_command"}:
         sys.exit(0)
     command = (event.get("tool_input") or {}).get("command", "")
     if not command:
@@ -59,11 +59,11 @@ def main():
     violation = find_violation(command)
     if violation is None:
         sys.exit(0)
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    plugin_root = os.environ.get("PLUGIN_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT")
     if plugin_root:
-        trash_command = '"{}"'.format(os.path.join(plugin_root, "bin", "claude-trash"))
+        trash_command = '"{}"'.format(os.path.join(plugin_root, "bin", "agent-trash"))
     else:
-        trash_command = "claude-trash"
+        trash_command = "agent-trash"
     sys.stderr.write(
         "trash-guard: blocked a permanent delete ({0}).\n"
         "Command: {1}\n"

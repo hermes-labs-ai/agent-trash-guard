@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          {
+            "name": "agent-trash-guard",
+            "type": "command",
+            "command": "python3 __AGENT_TRASH_GUARD_ROOT__/hooks/trash_guard.py",
+            "timeout": 8,
+            "description": "Block permanent deletes and recommend recoverable trash"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -10,6 +10,10 @@ if [ -L "$BIN_DIR/claude-trash" ]; then
   rm "$BIN_DIR/claude-trash"
   echo "removed $BIN_DIR/claude-trash"
 fi
+if [ -L "$BIN_DIR/agent-trash" ]; then
+  rm "$BIN_DIR/agent-trash"
+  echo "removed $BIN_DIR/agent-trash"
+fi
 
 if [ -f "$SETTINGS" ]; then
   cp "$SETTINGS" "$SETTINGS.backup.$(date +%Y%m%d%H%M%S)"

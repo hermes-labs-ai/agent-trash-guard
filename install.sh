@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Installs claude-trash-guard for the current user:
-#   1. symlinks bin/claude-trash into ~/.local/bin
+# Installs the Claude adapter for agent-trash-guard:
+#   1. symlinks agent-trash and the legacy claude-trash name into ~/.local/bin
 #   2. registers hooks/trash_guard.py as a PreToolUse hook in ~/.claude/settings.json
 # A timestamped backup of settings.json is written before any change.
 set -euo pipefail
@@ -11,7 +11,8 @@ BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
 mkdir -p "$BIN_DIR"
 ln -sf "$REPO_DIR/bin/claude-trash" "$BIN_DIR/claude-trash"
-echo "linked $BIN_DIR/claude-trash"
+ln -sf "$REPO_DIR/bin/agent-trash" "$BIN_DIR/agent-trash"
+echo "linked $BIN_DIR/agent-trash (plus compatibility alias claude-trash)"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "note: $BIN_DIR is not on your PATH; add it to your shell profile" ;;
