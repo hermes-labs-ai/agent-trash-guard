@@ -14,9 +14,9 @@ No dependencies beyond Python 3 (stdlib only) and bash.
 ## Quick start
 
 ```bash
-git clone <this-repo> claude-trash-guard
+git clone https://github.com/hermes-labs-ai/claude-trash-guard.git
 cd claude-trash-guard
-./tests/run.sh     # optional: 36 checks, ~2 seconds
+./tests/run.sh     # optional: 41 checks, ~2 seconds
 ./install.sh
 ```
 
