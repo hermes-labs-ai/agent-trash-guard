@@ -21,7 +21,10 @@ COMMAND_POSITION = re.compile(
 )
 
 FIND_DELETE = re.compile(r"\bfind\b[^;&|]*\s-delete\b")
-FIND_EXEC_DELETE = re.compile(r"-(?:exec|execdir|ok|okdir)\s+(?:rm|shred|unlink)\b")
+FIND_EXEC_DELETE = re.compile(
+    r"-(?:exec|execdir|ok|okdir)\s+"
+    r"(?:(?:/[A-Za-z0-9_.+-]+)*/)?(?:rm|shred|unlink)\b"
+)
 GIT_CLEAN_FORCE = re.compile(r"\bgit\s+clean\b[^;&|]*\s-\w*f")
 
 
