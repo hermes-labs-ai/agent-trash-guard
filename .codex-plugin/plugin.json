@@ -7,8 +7,8 @@
     "email": "info@hermes-labs.ai",
     "url": "https://github.com/hermes-labs-ai"
   },
-  "homepage": "https://github.com/hermes-labs-ai/claude-trash-guard",
-  "repository": "https://github.com/hermes-labs-ai/claude-trash-guard",
+  "homepage": "https://github.com/hermes-labs-ai/agent-trash-guard",
+  "repository": "https://github.com/hermes-labs-ai/agent-trash-guard",
   "license": "MIT",
   "keywords": ["safety", "trash", "recovery", "hooks", "pretooluse"],
   "hooks": "./hooks/codex.json"

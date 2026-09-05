@@ -8,9 +8,10 @@ Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 Code, Codex, and Gemini CLI, backed by one detector and the `agent-trash` CLI.
 Every guarded "delete" becomes a move you can inspect and reverse.
 
-The GitHub repository retains its historical `claude-trash-guard` name for
-now. `claude-trash` remains as a compatibility command, while new integrations
-and documentation use the platform-neutral `agent-trash-guard` name.
+The project was originally published as `claude-trash-guard`. GitHub redirects
+that historical repository URL, and `claude-trash` remains as a compatibility
+command. New integrations and documentation use the platform-neutral
+`agent-trash-guard` name.
 
 No dependencies beyond Python 3 (stdlib only) and bash.
 
@@ -20,8 +21,8 @@ Clone the repository, run its isolated checks, then load the repository root as
 a local plugin while evaluating it:
 
 ```bash
-git clone https://github.com/hermes-labs-ai/claude-trash-guard.git
-cd claude-trash-guard
+git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
+cd agent-trash-guard
 ./tests/run.sh
 claude --plugin-dir "$PWD"
 ```
@@ -74,8 +75,8 @@ Restart Gemini CLI afterwards. Uninstall only that adapter with
 ## Manual Claude installation fallback
 
 ```bash
-git clone https://github.com/hermes-labs-ai/claude-trash-guard.git
-cd claude-trash-guard
+git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
+cd agent-trash-guard
 ./tests/run.sh
 ./install.sh
 ```
