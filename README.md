@@ -17,60 +17,74 @@ No dependencies beyond Python 3 (stdlib only) and bash.
 
 ## Claude Code
 
-Clone the repository, run its isolated checks, then load the repository root as
-a local plugin while evaluating it:
+Clone the repository, run its isolated checks, then load the Claude adapter
+directory while evaluating it:
 
 ```bash
 git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
 cd agent-trash-guard
 ./tests/run.sh
-claude --plugin-dir "$PWD"
+claude --plugin-dir "$PWD/integrations/claude"
 ```
 
-The plugin manifest lives at `.claude-plugin/plugin.json`; Claude discovers the
-`PreToolUse` hook through `hooks/hooks.json`. The hook invokes only bundled,
-plugin-relative files and does not edit `~/.claude/settings.json` or create a
-global symlink. When it blocks a delete, its guidance points to the bundled
-`bin/agent-trash` command.
+The Claude package lives at `integrations/claude/`. Its `PreToolUse` hook and
+runtime are self-contained because marketplace installs execute from a private
+plugin cache. Do not load the repository root with `--plugin-dir`: the root is
+the Gemini extension and has Gemini's `BeforeTool` hook schema.
 
 `--plugin-dir` is the local evaluation path. The repository also carries a
-validated marketplace manifest. Once the marketplace is public and indexed,
-installation is one Claude command:
+validated marketplace manifest. Once the marketplace is public, install it
+with:
 
 ```bash
+claude plugin marketplace add hermes-labs-ai/agent-trash-guard
 claude plugin install claude-trash-guard@hermes-labs
 ```
 
 Until then, do not treat that command as a live public route; use the local
-evaluation path above.
+evaluation path above. `claude-trash-guard` remains the Claude plugin ID for
+existing users; `agent-trash` is the neutral bundled command.
 
 ## Codex CLI and app
 
-Codex 0.145 or newer can load this repository as a native plugin. Add the local
-marketplace, install the neutral plugin entry, then review and trust its hook
-with `/hooks`:
+Codex 0.145 or newer can load the self-contained Codex adapter from this
+repository's marketplace. Add the local marketplace, install the neutral plugin
+entry, then review and trust its hook with `/hooks`:
 
 ```bash
 codex plugin marketplace add "$PWD"
 codex plugin add agent-trash-guard@hermes-labs
 ```
 
-The Codex adapter uses `PreToolUse` for `Bash`, the same JSON event consumed by
-the shared detector. Codex requires an explicit trust review for non-managed
-plugin hooks and skips the hook until that review is complete.
+The Codex package is `integrations/codex/` and uses `PreToolUse` for `Bash`.
+Codex requires an explicit trust review for non-managed plugin hooks and skips
+the hook until that review is complete.
 
 ## Gemini CLI
 
-Gemini CLI uses `BeforeTool` and names its shell tool `run_shell_command`. The
-bundled installer registers that native mapping without changing Claude or
-Codex configuration:
+Gemini CLI is the repository-root extension. It uses `BeforeTool` and names
+its shell tool `run_shell_command`:
 
 ```bash
-./integrations/gemini/install.sh
+gemini extensions install https://github.com/hermes-labs-ai/agent-trash-guard
 ```
 
-Restart Gemini CLI afterwards. Uninstall only that adapter with
-`./integrations/gemini/uninstall.sh`.
+Restart Gemini CLI afterwards. Update or uninstall it with:
+
+```bash
+gemini extensions update agent-trash-guard
+gemini extensions uninstall agent-trash-guard
+```
+
+The root `gemini-extension.json` makes this repository eligible for Gemini's
+Gallery crawler when the public repository has the `gemini-cli-extension` topic
+and a tagged release. The nested Claude and Codex package roots intentionally
+do not qualify as Gemini extensions.
+
+For local development use `gemini extensions link "$PWD"`. The old
+`integrations/gemini/install.sh` and `uninstall.sh` remain only to remove or
+maintain a pre-extension settings-based installation; they are not the primary
+installation route.
 
 ## Manual Claude installation fallback
 
@@ -81,9 +95,11 @@ cd agent-trash-guard
 ./install.sh
 ```
 
-`install.sh` symlinks `claude-trash` into `~/.local/bin` and registers the hook
-in `~/.claude/settings.json` (a timestamped backup is written first, and the
-edit is idempotent). Restart any running Claude Code session afterwards.
+`install.sh` symlinks `claude-trash` into `~/.local/bin` and registers the
+Claude adapter in `~/.claude/settings.json` (a timestamped backup is written
+first, and the edit is idempotent). Restart any running Claude Code session
+afterwards. `uninstall.sh` removes only that exact legacy hook command, leaving
+other `trash_guard.py` hooks alone.
 
 ## What gets blocked
 
@@ -139,7 +155,10 @@ session logs and permission prompts rather than hiding in configuration.
 Claude/Codex `Bash` and Gemini `run_shell_command` names. If the command matches
 a delete pattern, it exits with code 2, which all three runtimes define as a
 blocking decision whose stderr becomes agent guidance. Anything else exits 0.
-The hook fails open when an event cannot be parsed.
+The hook fails open when an event cannot be parsed. The runtime files inside
+`integrations/claude` and `integrations/codex` are generated copies required by
+plugin-cache isolation; do not edit them. Regenerate with
+`python3 tools/build_platform_bundles.py` and verify with `--check`.
 
 ## Other agents
 
@@ -167,10 +186,36 @@ Removes the hook entry and the symlink. Your trash directory is left intact.
 
 ```bash
 ./tests/run.sh
+python3 tools/build_platform_bundles.py --check
 ```
 
 Covers the hook's block/allow matrix and the full put/list/restore/empty
 lifecycle, in an isolated temp directory.
+
+## Recoverability proof
+
+[`tests/recoverability-demo.sh`](tests/recoverability-demo.sh) is a
+self-contained, deterministic proof that the guard blocks a destructive command
+and that the trash workflow loses nothing. It runs entirely inside a freshly
+created temporary directory, validates that path before cleaning up, and never
+touches user files or the real trash directory.
+
+```bash
+./tests/recoverability-demo.sh
+```
+
+Using the released hook event interface and the `agent-trash` CLI, it shows:
+
+1. a representative `rm -rf FILE` event is blocked (hook exit 2) and the file
+   stays in place
+2. the recommended replacement, `agent-trash put FILE`, passes the hook
+3. `agent-trash put` moves the file into a timestamped trash entry
+4. `agent-trash list` exposes the entry and the file's original path
+5. `agent-trash restore <id>` returns the file to its original path
+6. the restored file's SHA-256 equals the original, pinned digest
+
+The script stops at the first failed step with a non-zero exit and prints
+`RESULT: PASS (6/6)` when the proof holds.
 
 ## License
 

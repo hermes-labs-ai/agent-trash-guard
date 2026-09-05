@@ -14,7 +14,7 @@
       "version": "0.1.0",
       "source": {
         "source": "local",
-        "path": "./"
+        "path": "./integrations/codex"
       },
       "policy": {
         "installation": "AVAILABLE",

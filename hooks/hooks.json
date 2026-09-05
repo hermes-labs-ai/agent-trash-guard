@@ -1,14 +1,15 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "BeforeTool": [
       {
-        "matcher": "Bash",
+        "matcher": "run_shell_command",
         "hooks": [
           {
+            "name": "agent-trash-guard",
             "type": "command",
-            "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/trash_guard.py"],
-            "timeout": 8
+            "command": "python3 \"${extensionPath}${/}hooks${/}trash_guard.py\"",
+            "timeout": 8000,
+            "description": "Block permanent deletes and recommend recoverable trash"
           }
         ]
       }
