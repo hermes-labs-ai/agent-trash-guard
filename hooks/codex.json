@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/trash_guard.py",
+            "timeout": 8,
+            "statusMessage": "Checking for permanent deletes"
+          }
+        ]
+      }
+    ]
+  }
+}

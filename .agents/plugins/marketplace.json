@@ -1,0 +1,26 @@
+{
+  "name": "hermes-labs",
+  "interface": {
+    "displayName": "Hermes Labs"
+  },
+  "owner": {
+    "name": "Hermes Labs",
+    "email": "info@hermes-labs.ai"
+  },
+  "plugins": [
+    {
+      "name": "agent-trash-guard",
+      "description": "Recoverable deletion guard for coding agents.",
+      "version": "0.1.0",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

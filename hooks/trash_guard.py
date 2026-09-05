@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse hook for Claude Code: block permanent-delete commands, point to `claude-trash put`.
+"""Cross-agent hook: block permanent-delete commands and point to recoverable trash.
 
-Reads the PreToolUse event JSON on stdin. Exit 0 allows the tool call;
-exit 2 blocks it and feeds stderr back to Claude as guidance.
+Reads a Claude/Codex PreToolUse or Gemini BeforeTool event on stdin. Exit 0
+allows the tool call; exit 2 blocks it and feeds stderr back to the agent.
 """
 import json
 import os
@@ -21,7 +21,10 @@ COMMAND_POSITION = re.compile(
 )
 
 FIND_DELETE = re.compile(r"\bfind\b[^;&|]*\s-delete\b")
-FIND_EXEC_DELETE = re.compile(r"-(?:exec|execdir|ok|okdir)\s+(?:rm|shred|unlink)\b")
+FIND_EXEC_DELETE = re.compile(
+    r"-(?:exec|execdir|ok|okdir)\s+"
+    r"(?:(?:/[A-Za-z0-9_.+-]+)*/)?(?:rm|shred|unlink)\b"
+)
 GIT_CLEAN_FORCE = re.compile(r"\bgit\s+clean\b[^;&|]*\s-\w*f")
 
 
@@ -44,7 +47,7 @@ def main():
         event = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
-    if event.get("tool_name") != "Bash":
+    if event.get("tool_name") not in {"Bash", "run_shell_command"}:
         sys.exit(0)
     command = (event.get("tool_input") or {}).get("command", "")
     if not command:
@@ -56,18 +59,23 @@ def main():
     violation = find_violation(command)
     if violation is None:
         sys.exit(0)
+    plugin_root = os.environ.get("PLUGIN_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin_root:
+        trash_command = '"{}"'.format(os.path.join(plugin_root, "bin", "agent-trash"))
+    else:
+        trash_command = "agent-trash"
     sys.stderr.write(
         "trash-guard: blocked a permanent delete ({0}).\n"
         "Command: {1}\n"
         "Move the targets to recoverable trash instead:\n"
-        "  claude-trash put <path...>\n"
+        "  {2} put <path...>\n"
         "Inspect or undo later:\n"
-        "  claude-trash list\n"
-        "  claude-trash restore <id>\n"
-        "  claude-trash empty --older-than 7 --yes\n"
+        "  {2} list\n"
+        "  {2} restore <id>\n"
+        "  {2} empty --older-than 7 --yes\n"
         "If the user explicitly approved a permanent delete, prefix the "
         "command with TRASH_GUARD_ALLOW=1 for a one-off override.\n".format(
-            violation, command[:200]
+            violation, command[:200], trash_command
         )
     )
     sys.exit(2)
