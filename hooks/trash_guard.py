@@ -56,18 +56,23 @@ def main():
     violation = find_violation(command)
     if violation is None:
         sys.exit(0)
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin_root:
+        trash_command = '"{}"'.format(os.path.join(plugin_root, "bin", "claude-trash"))
+    else:
+        trash_command = "claude-trash"
     sys.stderr.write(
         "trash-guard: blocked a permanent delete ({0}).\n"
         "Command: {1}\n"
         "Move the targets to recoverable trash instead:\n"
-        "  claude-trash put <path...>\n"
+        "  {2} put <path...>\n"
         "Inspect or undo later:\n"
-        "  claude-trash list\n"
-        "  claude-trash restore <id>\n"
-        "  claude-trash empty --older-than 7 --yes\n"
+        "  {2} list\n"
+        "  {2} restore <id>\n"
+        "  {2} empty --older-than 7 --yes\n"
         "If the user explicitly approved a permanent delete, prefix the "
         "command with TRASH_GUARD_ALLOW=1 for a one-off override.\n".format(
-            violation, command[:200]
+            violation, command[:200], trash_command
         )
     )
     sys.exit(2)

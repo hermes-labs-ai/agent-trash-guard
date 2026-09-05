@@ -11,12 +11,41 @@ inspect and reverse.
 
 No dependencies beyond Python 3 (stdlib only) and bash.
 
-## Quick start
+## Quick start: native Claude Code plugin
+
+Clone the repository, run its isolated checks, then load the repository root as
+a local plugin while evaluating it:
 
 ```bash
 git clone https://github.com/hermes-labs-ai/claude-trash-guard.git
 cd claude-trash-guard
-./tests/run.sh     # optional: 41 checks, ~2 seconds
+./tests/run.sh
+claude --plugin-dir "$PWD"
+```
+
+The plugin manifest lives at `.claude-plugin/plugin.json`; Claude discovers the
+`PreToolUse` hook through `hooks/hooks.json`. The hook invokes only bundled,
+plugin-relative files and does not edit `~/.claude/settings.json` or create a
+global symlink. When it blocks a delete, its guidance points to the bundled
+`bin/claude-trash` command.
+
+`--plugin-dir` is the local evaluation path. The repository also carries a
+validated marketplace manifest. Once the marketplace is public and indexed,
+installation is one Claude command:
+
+```bash
+claude plugin install claude-trash-guard@hermes-labs
+```
+
+Until then, do not treat that command as a live public route; use the local
+evaluation path above.
+
+## Manual installation fallback
+
+```bash
+git clone https://github.com/hermes-labs-ai/claude-trash-guard.git
+cd claude-trash-guard
+./tests/run.sh
 ./install.sh
 ```
 
@@ -79,6 +108,11 @@ else exits 0 and runs untouched. The hook fails open: if the event can't be
 parsed, it stays out of the way rather than breaking your session.
 
 ## Uninstall
+
+For the native plugin path, end the `claude --plugin-dir` session or remove the
+plugin through Claude Code's plugin manager. Trash contents remain untouched.
+
+For the manual fallback:
 
 ```bash
 ./uninstall.sh

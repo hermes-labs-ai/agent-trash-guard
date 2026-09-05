@@ -58,6 +58,38 @@ check "hook ignores bad json"       0 "$(hook_exit 'not json at all')"
 printf '%s' "$(bash_event 'rm -rf build')" | TRASH_GUARD_ALLOW=1 python3 "$HOOK" 2>/dev/null
 check "hook allows env override"    0 "$?"
 
+# --- native plugin: discovery metadata and plugin-relative guidance ---
+python3 - "$REPO_DIR" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+assert manifest["name"] == "claude-trash-guard"
+assert manifest["version"] == "0.1.0"
+marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
+marketplace_entry = marketplace["plugins"][0]
+assert marketplace["name"] == "hermes-labs"
+assert marketplace_entry["name"] == manifest["name"]
+assert marketplace_entry["version"] == manifest["version"]
+assert marketplace_entry["source"] == "./"
+hooks = json.loads((root / "hooks" / "hooks.json").read_text())
+entry = hooks["hooks"]["PreToolUse"][0]
+assert entry["matcher"] == "Bash"
+command = entry["hooks"][0]
+assert command["command"] == "python3"
+assert command["args"] == ["${CLAUDE_PLUGIN_ROOT}/hooks/trash_guard.py"]
+PY
+check "plugin metadata is valid JSON" 0 "$?"
+
+PLUGIN_ERR="$({
+  printf '%s' "$(bash_event 'rm -rf build')" |
+    CLAUDE_PLUGIN_ROOT="$REPO_DIR" python3 "$HOOK" 2>&1 >/dev/null
+} || true)"
+printf '%s' "$PLUGIN_ERR" | grep -Fq "\"$REPO_DIR/bin/claude-trash\" put <path...>"
+check "plugin guidance uses bundled CLI" 0 "$?"
+
 # --- cli: put / list / restore roundtrip ---
 mkdir -p "$WORK/project/sub"
 echo "keep me" > "$WORK/project/a.txt"
