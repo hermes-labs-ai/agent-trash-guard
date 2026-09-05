@@ -27,19 +27,28 @@ remove_owned_link "$BIN_DIR/agent-trash" "$REPO_DIR/bin/agent-trash"
 
 if [ -f "$SETTINGS" ]; then
   cp "$SETTINGS" "$SETTINGS.backup.$(date +%Y%m%d%H%M%S)"
-  python3 - "$SETTINGS" <<'PY'
-import json, sys
+python3 - "$SETTINGS" "$REPO_DIR" <<'PY'
+import json, os, sys
 
-settings_path = sys.argv[1]
+settings_path, repo_dir = sys.argv[1], sys.argv[2]
 with open(settings_path) as f:
     settings = json.load(f)
+
+# The root-hook path is the pre-plugin installer location. Keep this narrow:
+# a separately installed or foreign trash_guard.py must remain untouched.
+owned_commands = {
+    "python3 " + os.path.join(repo_dir, "hooks", "trash_guard.py"),
+    "python3 " + os.path.join(
+        repo_dir, "integrations", "claude", "hooks", "trash_guard.py"
+    ),
+}
 
 pre_tool_use = settings.get("hooks", {}).get("PreToolUse", [])
 kept = []
 for matcher in pre_tool_use:
     matcher["hooks"] = [
         h for h in matcher.get("hooks", [])
-        if "trash_guard.py" not in h.get("command", "")
+        if h.get("command", "") not in owned_commands
     ]
     if matcher["hooks"]:
         kept.append(matcher)

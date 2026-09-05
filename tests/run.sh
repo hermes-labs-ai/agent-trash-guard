@@ -78,14 +78,30 @@ check "hook ignores bad json"       0 "$(hook_exit 'not json at all')"
 printf '%s' "$(bash_event 'rm -rf build')" | TRASH_GUARD_ALLOW=1 python3 "$HOOK" 2>/dev/null
 check "hook allows env override"    0 "$?"
 
-# --- native plugin: discovery metadata and plugin-relative guidance ---
+# --- package roots: native schemas and generated cache-isolated runtimes ---
 python3 - "$REPO_DIR" <<'PY'
+import filecmp
 import json
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+assert not (root / ".claude-plugin" / "plugin.json").exists()
+assert not (root / ".codex-plugin" / "plugin.json").exists()
+
+gemini_manifest = json.loads((root / "gemini-extension.json").read_text())
+assert gemini_manifest["name"] == "agent-trash-guard"
+assert gemini_manifest["version"] == "0.1.0"
+gemini_hooks = json.loads((root / "hooks" / "hooks.json").read_text())
+gemini_entry = gemini_hooks["hooks"]["BeforeTool"][0]
+assert gemini_entry["matcher"] == "run_shell_command"
+assert gemini_entry["hooks"][0]["command"] == (
+    'python3 "${extensionPath}${/}hooks${/}trash_guard.py"'
+)
+assert gemini_entry["hooks"][0]["timeout"] == 8000
+
+claude_root = root / "integrations" / "claude"
+manifest = json.loads((claude_root / ".claude-plugin" / "plugin.json").read_text())
 assert manifest["name"] == "claude-trash-guard"
 assert manifest["version"] == "0.1.0"
 marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
@@ -93,18 +109,19 @@ marketplace_entry = marketplace["plugins"][0]
 assert marketplace["name"] == "hermes-labs"
 assert marketplace_entry["name"] == manifest["name"]
 assert marketplace_entry["version"] == manifest["version"]
-assert marketplace_entry["source"] == "./"
-hooks = json.loads((root / "hooks" / "hooks.json").read_text())
+assert marketplace_entry["source"] == "./integrations/claude"
+hooks = json.loads((claude_root / "hooks" / "hooks.json").read_text())
 entry = hooks["hooks"]["PreToolUse"][0]
 assert entry["matcher"] == "Bash"
 command = entry["hooks"][0]
 assert command["command"] == "python3"
 assert command["args"] == ["${CLAUDE_PLUGIN_ROOT}/hooks/trash_guard.py"]
 
-codex = json.loads((root / ".codex-plugin" / "plugin.json").read_text())
+codex_root = root / "integrations" / "codex"
+codex = json.loads((codex_root / ".codex-plugin" / "plugin.json").read_text())
 assert codex["name"] == "agent-trash-guard"
 assert codex["hooks"] == "./hooks/codex.json"
-codex_hooks = json.loads((root / "hooks" / "codex.json").read_text())
+codex_hooks = json.loads((codex_root / "hooks" / "codex.json").read_text())
 codex_entry = codex_hooks["hooks"]["PreToolUse"][0]
 assert codex_entry["matcher"] == "Bash"
 assert codex_entry["hooks"][0]["command"] == "python3 ${PLUGIN_ROOT}/hooks/trash_guard.py"
@@ -114,7 +131,7 @@ assert codex_market["interface"]["displayName"] == "Hermes Labs"
 assert codex_market["plugins"][0]["name"] == "agent-trash-guard"
 assert codex_market["plugins"][0]["source"] == {
     "source": "local",
-    "path": "./",
+    "path": "./integrations/codex",
 }
 assert codex_market["plugins"][0]["policy"] == {
     "installation": "AVAILABLE",
@@ -122,12 +139,19 @@ assert codex_market["plugins"][0]["policy"] == {
 }
 assert codex_market["plugins"][0]["category"] == "Productivity"
 
-gemini = json.loads((root / "integrations" / "gemini" / "hooks.json").read_text())
-gemini_entry = gemini["hooks"]["BeforeTool"][0]
-assert gemini_entry["matcher"] == "run_shell_command"
-assert gemini_entry["hooks"][0]["timeout"] == 8000
+for adapter_root in (claude_root, codex_root):
+    for relative in (
+        "hooks/trash_guard.py",
+        "bin/agent-trash",
+        "bin/claude-trash",
+        "lib/agent_trash.py",
+    ):
+        assert filecmp.cmp(root / relative, adapter_root / relative, shallow=False)
 PY
-check "adapter metadata is valid JSON" 0 "$?"
+check "package roots and generated runtimes are valid" 0 "$?"
+
+python3 "$REPO_DIR/tools/build_platform_bundles.py" --check >/dev/null
+check "generated runtime parity check passes" 0 "$?"
 
 PLUGIN_ERR="$({
   printf '%s' "$(bash_event 'rm -rf build')" |
@@ -135,6 +159,22 @@ PLUGIN_ERR="$({
 } || true)"
 printf '%s' "$PLUGIN_ERR" | grep -Fq "\"$REPO_DIR/bin/agent-trash\" put <path...>"
 check "plugin guidance uses bundled CLI" 0 "$?"
+
+PACKAGE_WITH_SPACES="$WORK/Claude package space"
+cp -R "$REPO_DIR/integrations/claude" "$PACKAGE_WITH_SPACES"
+PACKAGE_REALPATH="$(python3 - "$PACKAGE_WITH_SPACES" <<'PY'
+import os
+import sys
+print(os.path.realpath(sys.argv[1]))
+PY
+)"
+SPACE_ERR="$({
+  printf '%s' "$(bash_event 'rm -rf build')" |
+    env -u CLAUDE_PLUGIN_ROOT -u PLUGIN_ROOT -u AGENT_TRASH_GUARD_ROOT \
+      python3 "$PACKAGE_WITH_SPACES/hooks/trash_guard.py" 2>&1 >/dev/null
+} || true)"
+printf '%s' "$SPACE_ERR" | grep -Fq "\"$PACKAGE_REALPATH/bin/agent-trash\" put <path...>"
+check "self-contained package guidance survives spaces" 0 "$?"
 
 python3 "$LEGACY_CLI" --help 2>&1 | grep -q "agent-trash"
 check "legacy claude-trash command remains compatible" 0 "$?"
@@ -266,12 +306,68 @@ check "Claude installer creates owned legacy link" 0 \
 check "neutral CLI runs through installed symlink" 0 "$?"
 "$WORK/claude-owned-bin/claude-trash" --help 2>&1 | grep -q "agent-trash"
 check "legacy CLI runs through installed symlink" 0 "$?"
+python3 - "$WORK/claude-owned/settings.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+settings = json.loads(path.read_text())
+settings["hooks"]["PreToolUse"].append({
+    "matcher": "Bash",
+    "hooks": [{"type": "command", "command": "python3 /foreign/trash_guard.py"}],
+})
+path.write_text(json.dumps(settings))
+PY
 CLAUDE_SETTINGS="$WORK/claude-owned/settings.json" BIN_DIR="$WORK/claude-owned-bin" \
   "$REPO_DIR/uninstall.sh" >/dev/null
 check "Claude uninstaller removes owned neutral link" 1 \
   "$(exists_exit "$WORK/claude-owned-bin/agent-trash")"
 check "Claude uninstaller removes owned legacy link" 1 \
   "$(exists_exit "$WORK/claude-owned-bin/claude-trash")"
+python3 - "$WORK/claude-owned/settings.json" <<'PY'
+import json
+import pathlib
+import sys
+
+settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert settings["hooks"]["PreToolUse"] == [{
+    "matcher": "Bash",
+    "hooks": [{"type": "command", "command": "python3 /foreign/trash_guard.py"}],
+}]
+PY
+check "Claude uninstaller preserves foreign legacy hook" 0 "$?"
+
+python3 - "$WORK/claude-old-root/settings.json" "$REPO_DIR" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+old_command = f"python3 {sys.argv[2]}/hooks/trash_guard.py"
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps({"hooks": {"PreToolUse": [{
+    "matcher": "Bash",
+    "hooks": [
+        {"type": "command", "command": old_command},
+        {"type": "command", "command": "python3 /foreign/trash_guard.py"},
+    ],
+}]}}))
+PY
+CLAUDE_SETTINGS="$WORK/claude-old-root/settings.json" BIN_DIR="$WORK/claude-old-root-bin" \
+  "$REPO_DIR/uninstall.sh" >/dev/null
+python3 - "$WORK/claude-old-root/settings.json" <<'PY'
+import json
+import pathlib
+import sys
+
+settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert settings["hooks"]["PreToolUse"] == [{
+    "matcher": "Bash",
+    "hooks": [{"type": "command", "command": "python3 /foreign/trash_guard.py"}],
+}]
+PY
+check "Claude uninstaller migrates old root hook safely" 0 "$?"
 
 mkdir -p "$WORK/claude-foreign-bin"
 ln -s /bin/echo "$WORK/claude-foreign-bin/agent-trash"

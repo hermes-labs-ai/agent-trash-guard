@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "claude-trash-guard",
-      "source": "./",
+      "source": "./integrations/claude",
       "description": "Blocks permanent deletes and redirects Claude Code to a recoverable trash workflow.",
       "version": "0.1.0",
       "category": "development"

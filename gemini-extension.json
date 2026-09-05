@@ -1,0 +1,5 @@
+{
+  "name": "agent-trash-guard",
+  "version": "0.1.0",
+  "description": "Blocks permanent-delete shell commands and redirects agents to recoverable trash."
+}

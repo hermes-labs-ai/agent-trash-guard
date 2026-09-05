@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the Claude adapter for agent-trash-guard:
 #   1. symlinks agent-trash and the legacy claude-trash name into ~/.local/bin
-#   2. registers hooks/trash_guard.py as a PreToolUse hook in ~/.claude/settings.json
+#   2. registers the self-contained Claude adapter in ~/.claude/settings.json
 # A timestamped backup of settings.json is written before any change.
 set -euo pipefail
 
@@ -49,7 +49,9 @@ python3 - "$SETTINGS" "$REPO_DIR" <<'PY'
 import json, os, sys
 
 settings_path, repo_dir = sys.argv[1], sys.argv[2]
-hook_command = "python3 " + os.path.join(repo_dir, "hooks", "trash_guard.py")
+hook_command = "python3 " + os.path.join(
+    repo_dir, "integrations", "claude", "hooks", "trash_guard.py"
+)
 
 settings = {}
 if os.path.isfile(settings_path):
@@ -59,7 +61,7 @@ if os.path.isfile(settings_path):
 pre_tool_use = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
 for matcher in pre_tool_use:
     for hook in matcher.get("hooks", []):
-        if "trash_guard.py" in hook.get("command", ""):
+        if hook.get("command", "") == hook_command:
             print("hook already registered; settings unchanged")
             sys.exit(0)
 
