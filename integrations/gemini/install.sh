@@ -7,7 +7,20 @@ SETTINGS="${GEMINI_SETTINGS:-$HOME/.gemini/settings.json}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
 mkdir -p "$BIN_DIR" "$(dirname "$SETTINGS")"
-ln -sf "$REPO_DIR/bin/agent-trash" "$BIN_DIR/agent-trash"
+if [ -e "$BIN_DIR/agent-trash" ] || [ -L "$BIN_DIR/agent-trash" ]; then
+  if ! { [ -L "$BIN_DIR/agent-trash" ] && python3 - "$BIN_DIR/agent-trash" "$REPO_DIR/bin/agent-trash" <<'PY'
+import os
+import sys
+raise SystemExit(0 if os.path.realpath(sys.argv[1]) == os.path.realpath(sys.argv[2]) else 1)
+PY
+  }
+  then
+    echo "refusing to replace non-owned path: $BIN_DIR/agent-trash" >&2
+    exit 1
+  fi
+else
+  ln -s "$REPO_DIR/bin/agent-trash" "$BIN_DIR/agent-trash"
+fi
 
 if [ -f "$SETTINGS" ]; then
   cp "$SETTINGS" "$SETTINGS.backup.$(date +%Y%m%d%H%M%S)"

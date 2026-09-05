@@ -30,7 +30,7 @@ The plugin manifest lives at `.claude-plugin/plugin.json`; Claude discovers the
 `PreToolUse` hook through `hooks/hooks.json`. The hook invokes only bundled,
 plugin-relative files and does not edit `~/.claude/settings.json` or create a
 global symlink. When it blocks a delete, its guidance points to the bundled
-`bin/claude-trash` command.
+`bin/agent-trash` command.
 
 `--plugin-dir` is the local evaluation path. The repository also carries a
 validated marketplace manifest. Once the marketplace is public and indexed,

@@ -10,8 +10,29 @@ SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
 mkdir -p "$BIN_DIR"
-ln -sf "$REPO_DIR/bin/claude-trash" "$BIN_DIR/claude-trash"
-ln -sf "$REPO_DIR/bin/agent-trash" "$BIN_DIR/agent-trash"
+
+same_link_target() {
+  [ -L "$1" ] && python3 - "$1" "$2" <<'PY'
+import os
+import sys
+raise SystemExit(0 if os.path.realpath(sys.argv[1]) == os.path.realpath(sys.argv[2]) else 1)
+PY
+}
+
+check_link_slot() {
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    if same_link_target "$1" "$2"; then
+      return 0
+    fi
+    echo "refusing to replace non-owned path: $1" >&2
+    return 1
+  fi
+}
+
+check_link_slot "$BIN_DIR/claude-trash" "$REPO_DIR/bin/claude-trash"
+check_link_slot "$BIN_DIR/agent-trash" "$REPO_DIR/bin/agent-trash"
+ln -sfn "$REPO_DIR/bin/claude-trash" "$BIN_DIR/claude-trash"
+ln -sfn "$REPO_DIR/bin/agent-trash" "$BIN_DIR/agent-trash"
 echo "linked $BIN_DIR/agent-trash (plus compatibility alias claude-trash)"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

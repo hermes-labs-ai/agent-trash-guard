@@ -5,15 +5,25 @@ set -euo pipefail
 
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ -L "$BIN_DIR/claude-trash" ]; then
-  rm "$BIN_DIR/claude-trash"
-  echo "removed $BIN_DIR/claude-trash"
-fi
-if [ -L "$BIN_DIR/agent-trash" ]; then
-  rm "$BIN_DIR/agent-trash"
-  echo "removed $BIN_DIR/agent-trash"
-fi
+remove_owned_link() {
+  local path="$1" target="$2"
+  if [ -L "$path" ] && python3 - "$path" "$target" <<'PY'
+import os
+import sys
+raise SystemExit(0 if os.path.realpath(sys.argv[1]) == os.path.realpath(sys.argv[2]) else 1)
+PY
+  then
+    rm "$path"
+    echo "removed $path"
+  elif [ -e "$path" ] || [ -L "$path" ]; then
+    echo "left non-owned path unchanged: $path"
+  fi
+}
+
+remove_owned_link "$BIN_DIR/claude-trash" "$REPO_DIR/bin/claude-trash"
+remove_owned_link "$BIN_DIR/agent-trash" "$REPO_DIR/bin/agent-trash"
 
 if [ -f "$SETTINGS" ]; then
   cp "$SETTINGS" "$SETTINGS.backup.$(date +%Y%m%d%H%M%S)"

@@ -110,7 +110,13 @@ assert codex_entry["matcher"] == "Bash"
 assert codex_entry["hooks"][0]["command"] == "python3 ${PLUGIN_ROOT}/hooks/trash_guard.py"
 
 codex_market = json.loads((root / ".agents" / "plugins" / "marketplace.json").read_text())
+assert codex_market["interface"]["displayName"] == "Hermes Labs"
 assert codex_market["plugins"][0]["name"] == "agent-trash-guard"
+assert codex_market["plugins"][0]["policy"] == {
+    "installation": "AVAILABLE",
+    "authentication": "ON_INSTALL",
+}
+assert codex_market["plugins"][0]["category"] == "Productivity"
 
 gemini = json.loads((root / "integrations" / "gemini" / "hooks.json").read_text())
 gemini_entry = gemini["hooks"]["BeforeTool"][0]
@@ -151,6 +157,58 @@ settings = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert not settings.get("hooks", {}).get("BeforeTool")
 PY
 check "Gemini uninstaller removes native hook" 0 "$?"
+check "Gemini uninstaller removes owned CLI link" 1 "$(exists_exit "$WORK/bin/agent-trash")"
+
+# Gemini install refuses a file or foreign symlink and uninstall preserves it.
+mkdir -p "$WORK/gemini-collision-bin"
+printf '%s\n' "keep me" > "$WORK/gemini-collision-bin/agent-trash"
+GEMINI_SETTINGS="$WORK/gemini-collision/settings.json" \
+  BIN_DIR="$WORK/gemini-collision-bin" \
+  "$REPO_DIR/integrations/gemini/install.sh" >/dev/null 2>&1
+check "Gemini installer refuses non-owned CLI file" 1 "$?"
+check "Gemini installer preserves non-owned CLI file" "keep me" \
+  "$(cat "$WORK/gemini-collision-bin/agent-trash")"
+rm "$WORK/gemini-collision-bin/agent-trash"
+ln -s /bin/echo "$WORK/gemini-collision-bin/agent-trash"
+GEMINI_SETTINGS="$WORK/gemini-collision/settings.json" \
+  BIN_DIR="$WORK/gemini-collision-bin" \
+  "$REPO_DIR/integrations/gemini/uninstall.sh" >/dev/null
+check "Gemini uninstaller preserves foreign CLI link" 0 \
+  "$(exists_exit "$WORK/gemini-collision-bin/agent-trash")"
+
+# Manual Claude install has the same collision and ownership guarantees.
+mkdir -p "$WORK/claude-collision-bin"
+printf '%s\n' "keep me too" > "$WORK/claude-collision-bin/agent-trash"
+CLAUDE_SETTINGS="$WORK/claude-collision/settings.json" \
+  BIN_DIR="$WORK/claude-collision-bin" "$REPO_DIR/install.sh" >/dev/null 2>&1
+check "Claude installer refuses non-owned CLI file" 1 "$?"
+check "Claude installer leaves no partial legacy link" 1 \
+  "$(exists_exit "$WORK/claude-collision-bin/claude-trash")"
+check "Claude installer preserves non-owned CLI file" "keep me too" \
+  "$(cat "$WORK/claude-collision-bin/agent-trash")"
+
+CLAUDE_SETTINGS="$WORK/claude-owned/settings.json" BIN_DIR="$WORK/claude-owned-bin" \
+  "$REPO_DIR/install.sh" >/dev/null
+check "Claude installer creates owned neutral link" 0 \
+  "$(exists_exit "$WORK/claude-owned-bin/agent-trash")"
+check "Claude installer creates owned legacy link" 0 \
+  "$(exists_exit "$WORK/claude-owned-bin/claude-trash")"
+CLAUDE_SETTINGS="$WORK/claude-owned/settings.json" BIN_DIR="$WORK/claude-owned-bin" \
+  "$REPO_DIR/uninstall.sh" >/dev/null
+check "Claude uninstaller removes owned neutral link" 1 \
+  "$(exists_exit "$WORK/claude-owned-bin/agent-trash")"
+check "Claude uninstaller removes owned legacy link" 1 \
+  "$(exists_exit "$WORK/claude-owned-bin/claude-trash")"
+
+mkdir -p "$WORK/claude-foreign-bin"
+ln -s /bin/echo "$WORK/claude-foreign-bin/agent-trash"
+ln -s /bin/echo "$WORK/claude-foreign-bin/claude-trash"
+CLAUDE_SETTINGS="$WORK/claude-foreign/settings.json" BIN_DIR="$WORK/claude-foreign-bin" \
+  "$REPO_DIR/uninstall.sh" >/dev/null
+check "Claude uninstaller preserves foreign neutral link" 0 \
+  "$(exists_exit "$WORK/claude-foreign-bin/agent-trash")"
+check "Claude uninstaller preserves foreign legacy link" 0 \
+  "$(exists_exit "$WORK/claude-foreign-bin/claude-trash")"
 
 # --- cli: put / list / restore roundtrip ---
 mkdir -p "$WORK/project/sub"
