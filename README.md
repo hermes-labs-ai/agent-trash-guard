@@ -192,6 +192,31 @@ python3 tools/build_platform_bundles.py --check
 Covers the hook's block/allow matrix and the full put/list/restore/empty
 lifecycle, in an isolated temp directory.
 
+## Recoverability proof
+
+[`tests/recoverability-demo.sh`](tests/recoverability-demo.sh) is a
+self-contained, deterministic proof that the guard blocks a destructive command
+and that the trash workflow loses nothing. It runs entirely inside a freshly
+created temporary directory, validates that path before cleaning up, and never
+touches user files or the real trash directory.
+
+```bash
+./tests/recoverability-demo.sh
+```
+
+Using the released hook event interface and the `agent-trash` CLI, it shows:
+
+1. a representative `rm -rf FILE` event is blocked (hook exit 2) and the file
+   stays in place
+2. the recommended replacement, `agent-trash put FILE`, passes the hook
+3. `agent-trash put` moves the file into a timestamped trash entry
+4. `agent-trash list` exposes the entry and the file's original path
+5. `agent-trash restore <id>` returns the file to its original path
+6. the restored file's SHA-256 equals the original, pinned digest
+
+The script stops at the first failed step with a non-zero exit and prints
+`RESULT: PASS (6/6)` when the proof holds.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
