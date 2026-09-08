@@ -1,7 +1,7 @@
 {
   "name": "agent-trash-guard",
   "description": "Blocks permanent-delete shell commands in Codex and redirects agents to a recoverable trash workflow.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Hermes Labs",
     "email": "info@hermes-labs.ai",

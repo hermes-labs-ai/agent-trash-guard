@@ -11,7 +11,7 @@
     {
       "name": "agent-trash-guard",
       "description": "Recoverable deletion guard for coding agents.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": {
         "source": "local",
         "path": "./integrations/codex"
