@@ -1,0 +1,40 @@
+version = 1
+
+[gate]
+fast_budget_seconds = 8.0
+full_required_local = false
+adapter_status = "NATIVE_DEFAULT"
+exclusions = [".git/**", ".hermes/hermes_gate_runner.py", ".pytest_cache/**", ".ruff_cache/**", "**/__pycache__/**", "vendor/**", "node_modules/**", "dist/**", "build/**"]
+
+[adapter]
+enabled = false
+name = "native"
+argv = []
+minimum_version = ""
+
+[lintlang]
+enabled = true
+argv = ["lintlang", "scan", "--format", "json", "--fail-on", "review", "{files}"]
+trigger_globs = ["**/AGENTS.md", "**/CLAUDE.md", "**/prompts/**", "**/*.prompt", ".codex/**", ".claude/**"]
+timeout_seconds = 4.0
+blocking_threshold = "MEDIUM"
+
+[review]
+provider = "coderabbit"
+argv = ["coderabbit", "review", "--agent"]
+timeout_seconds = 180.0
+material_severities = ["critical", "major"]
+material_categories = ["correctness", "security", "data-loss", "concurrency", "api-contract"]
+fallback_argv = []
+
+[[fast]]
+name = "diff-check"
+argv = ["python3", ".hermes/hermes_gate_runner.py", "diff-check", "{files}"]
+timeout_seconds = 4.0
+globs = ["**/*"]
+
+[[full]]
+name = "diff-check"
+argv = ["python3", ".hermes/hermes_gate_runner.py", "diff-check", "{files}"]
+timeout_seconds = 10.0
+globs = ["**/*"]
