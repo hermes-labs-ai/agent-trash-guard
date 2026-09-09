@@ -189,8 +189,22 @@ Removes the hook entry and the symlink. Your trash directory is left intact.
 python3 tools/build_platform_bundles.py --check
 ```
 
-Covers the hook's block/allow matrix and the full put/list/restore/empty
-lifecycle, in an isolated temp directory.
+Covers the hook's block/allow matrix, the full put/list/restore/empty
+lifecycle, and the quality rail's review range, in an isolated temp directory.
+
+The Hermes Gate rail in `.hermes/` keeps its local scope — worktree, index and
+untracked bytes — when run with no arguments. A hosted checkout has none of
+those, so CI names the range explicitly:
+
+```bash
+python3 .hermes/hermes_gate_runner.py full --base "$PULL_REQUEST_BASE_SHA"
+python3 .hermes/hermes_gate_runner.py full --all
+```
+
+`--base` compares that revision with `HEAD` (`HERMES_GATE_BASE` does the same),
+`--all` reviews every committed byte, and a base the checkout does not carry is
+an error rather than an empty scan. `full` runs every declared stage and reports
+each one; `fast` still stops at the first failure to hold its local budget.
 
 ## Recoverability proof
 

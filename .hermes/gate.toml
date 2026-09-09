@@ -4,7 +4,9 @@ version = 1
 fast_budget_seconds = 8.0
 full_required_local = false
 adapter_status = "NATIVE_DEFAULT"
-exclusions = [".git/**", ".hermes/hermes_gate_runner.py", ".pytest_cache/**", ".ruff_cache/**", "**/__pycache__/**", "vendor/**", "node_modules/**", "dist/**", "build/**"]
+# The runner is patched in this repository rather than a byte-for-byte copy, so it
+# stays in gate and review scope like any other source file.
+exclusions = [".git/**", ".pytest_cache/**", ".ruff_cache/**", "**/__pycache__/**", "vendor/**", "node_modules/**", "dist/**", "build/**"]
 
 [adapter]
 enabled = false
@@ -22,7 +24,8 @@ blocking_threshold = "MEDIUM"
 [review]
 provider = "coderabbit"
 argv = ["coderabbit", "review", "--agent"]
-timeout_seconds = 180.0
+# A review of this repository does not finish inside the generated 180s default.
+timeout_seconds = 900.0
 material_severities = ["critical", "major"]
 material_categories = ["correctness", "security", "data-loss", "concurrency", "api-contract"]
 fallback_argv = []

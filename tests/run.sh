@@ -91,7 +91,7 @@ assert not (root / ".codex-plugin" / "plugin.json").exists()
 
 gemini_manifest = json.loads((root / "gemini-extension.json").read_text())
 assert gemini_manifest["name"] == "agent-trash-guard"
-assert gemini_manifest["version"] == "0.1.1"
+assert gemini_manifest["version"] == "0.1.2"
 gemini_hooks = json.loads((root / "hooks" / "hooks.json").read_text())
 gemini_entry = gemini_hooks["hooks"]["BeforeTool"][0]
 assert gemini_entry["matcher"] == "run_shell_command"
@@ -103,7 +103,7 @@ assert gemini_entry["hooks"][0]["timeout"] == 8000
 claude_root = root / "integrations" / "claude"
 manifest = json.loads((claude_root / ".claude-plugin" / "plugin.json").read_text())
 assert manifest["name"] == "claude-trash-guard"
-assert manifest["version"] == "0.1.1"
+assert manifest["version"] == "0.1.2"
 marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
 marketplace_entry = marketplace["plugins"][0]
 assert marketplace["name"] == "hermes-labs"
@@ -447,6 +447,255 @@ check "empty spares young entries" 0 "$?"
 # survives restore because --force parks the displaced file inside it
 python3 "$CLI" empty --older-than 0 --yes | grep -q "removed 2"
 check "empty purges old entries" 0 "$?"
+
+# --- quality rail: review range, declared stages, preserved local scope ---
+# A hosted checkout has no worktree changes, so a worktree-only gate reports a green
+# rail over zero bytes. These fixtures pin the repaired behaviour: the range the rail
+# reviews, every declared full stage, and the unchanged local worktree scope.
+RAIL_RUNNER="$REPO_DIR/.hermes/hermes_gate_runner.py"
+RAIL_PROFILE="$REPO_DIR/.hermes/gate.toml"
+
+rail_git() {
+  local repo="$1"
+  shift
+  git -C "$repo" -c user.name="Trash Guard Tests" -c user.email="tests@example.invalid" \
+    -c commit.gpgsign=false "$@"
+}
+
+# Builds a repository whose *committed* bytes carry a whitespace error the worktree
+# cannot see, which is exactly the shape a pull request checkout has.
+rail_fixture() {
+  local repo="$1" profile="${2:-$RAIL_PROFILE}"
+  mkdir -p "$repo/.hermes"
+  cp "$RAIL_RUNNER" "$repo/.hermes/hermes_gate_runner.py"
+  cp "$profile" "$repo/.hermes/gate.toml"
+  git -c init.defaultBranch=main init -q "$repo"
+  printf '%s\n' "clean" > "$repo/clean.txt"
+  rail_git "$repo" add -A
+  rail_git "$repo" commit -qm "base"
+  # Kept outside the fixture so the checkout stays pristine, like a CI checkout.
+  rail_git "$repo" rev-parse HEAD > "$repo.base"
+  printf '%s \n' "committed trailing whitespace" > "$repo/offending.txt"
+  rail_git "$repo" add -A
+  rail_git "$repo" commit -qm "introduce whitespace error"
+}
+
+rail_field() {
+  python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"
+}
+
+rail_stages() {
+  python3 -c 'import json,sys; print(",".join(c["name"] + ":" + c["status"] for c in json.load(sys.stdin)["checks"]))'
+}
+
+RAIL="$WORK/rail"
+rail_fixture "$RAIL"
+RAIL_BASE="$(cat "$RAIL.base")"
+
+# 1. Hosted-checkout shape: a clean worktree must never report a passing stage.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full)"
+check "clean checkout full reports no applicable stage" "NOT_APPLICABLE" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "clean checkout full records no passing stage" "diff-check:NOT_APPLICABLE" \
+  "$(printf '%s' "$RAIL_OUT" | rail_stages)"
+
+# 2. The review range is the pull request base compared with HEAD.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base "$RAIL_BASE")"
+RAIL_EXIT=$?
+check "base range full fails on committed whitespace" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "base range full exits nonzero" 1 "$RAIL_EXIT"
+check "base range is base...HEAD" "$RAIL_BASE...HEAD" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field range)"
+printf '%s' "$RAIL_OUT" | grep -Fq "offending.txt:1: trailing whitespace."
+check "base range names the offending committed line" 0 "$?"
+
+# 3. CI passes the base through the environment; the flag and the variable agree.
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="$RAIL_BASE" python3 .hermes/hermes_gate_runner.py full)"
+check "HERMES_GATE_BASE selects the same range" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+
+# 4. A range that introduces nothing is honest about it instead of claiming a pass.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base HEAD)"
+check "empty range reports no applicable stage" "NOT_APPLICABLE" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+
+# 5. A base the checkout does not carry is an error, never a silent empty scan.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full \
+  --base 0000000000000000000000000000000000000000)"
+RAIL_EXIT=$?
+check "unresolvable base errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "unresolvable base exits nonzero" 1 "$RAIL_EXIT"
+
+# 6. Manual dispatch reviews every committed byte.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --all)"
+check "--all fails on committed whitespace" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+
+# 7. Local scope is unchanged: worktree, index and untracked bytes still drive the gate.
+printf '%s \n' "worktree trailing whitespace" >> "$RAIL/clean.txt"
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full)"
+check "local worktree change still fails full" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "local run keeps the worktree scope" "" "$(printf '%s' "$RAIL_OUT" | rail_field range)"
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py fast)"
+check "local worktree change still fails fast" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+rail_git "$RAIL" checkout -q -- clean.txt
+printf '%s \n' "untracked trailing whitespace" > "$RAIL/untracked.txt"
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py fast)"
+check "local untracked file still fails fast" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+rm -f "$RAIL/untracked.txt"
+
+# 8. full owes the caller every declared stage; fast keeps its first-failure budget exit.
+cat > "$WORK/multi-stage.toml" <<'TOML'
+version = 1
+
+[gate]
+fast_budget_seconds = 8.0
+exclusions = [".git/**", ".hermes/hermes_gate_runner.py"]
+
+[[fast]]
+name = "first"
+argv = ["python3", "-c", "raise SystemExit(1)", "{files}"]
+timeout_seconds = 4.0
+globs = ["**/*"]
+
+[[fast]]
+name = "second"
+argv = ["python3", "-c", "raise SystemExit(0)", "{files}"]
+timeout_seconds = 4.0
+globs = ["**/*"]
+
+[[full]]
+name = "first"
+argv = ["python3", "-c", "raise SystemExit(1)", "{files}"]
+timeout_seconds = 10.0
+globs = ["**/*"]
+
+[[full]]
+name = "second"
+argv = ["python3", "-c", "raise SystemExit(0)", "{files}"]
+timeout_seconds = 10.0
+globs = ["**/*"]
+
+[[full]]
+name = "fileless"
+argv = ["python3", "-c", "raise SystemExit(0)"]
+timeout_seconds = 10.0
+globs = ["**/*"]
+TOML
+RAIL_MULTI="$WORK/rail-multi"
+rail_fixture "$RAIL_MULTI" "$WORK/multi-stage.toml"
+RAIL_MULTI_BASE="$(cat "$RAIL_MULTI.base")"
+RAIL_OUT="$(cd "$RAIL_MULTI" && python3 .hermes/hermes_gate_runner.py full \
+  --base "$RAIL_MULTI_BASE")"
+check "full runs every declared stage past a failure" \
+  "first:FAIL,second:PASS,fileless:PASS" "$(printf '%s' "$RAIL_OUT" | rail_stages)"
+check "full reports the failing stage" "FAIL" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+printf '%s' "$RAIL_OUT" | grep -Fq "failed stages: first"
+check "full names the failing stage" 0 "$?"
+printf '%s \n' "worktree trailing whitespace" >> "$RAIL_MULTI/clean.txt"
+RAIL_OUT="$(cd "$RAIL_MULTI" && python3 .hermes/hermes_gate_runner.py fast)"
+check "fast still stops at the first failing stage" "first:FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_stages)"
+# A stage that reads no files still runs on a clean tree.
+rail_git "$RAIL_MULTI" checkout -q -- clean.txt
+RAIL_OUT="$(cd "$RAIL_MULTI" && python3 .hermes/hermes_gate_runner.py full)"
+check "file-less stage still runs on a clean tree" \
+  "first:NOT_APPLICABLE,second:NOT_APPLICABLE,fileless:PASS" \
+  "$(printf '%s' "$RAIL_OUT" | rail_stages)"
+
+# 9. A stage that cannot be launched at all, or that is declared unusably, is that
+#    stage's own result: the later declared stages still run.
+RAIL_LAUNCH="$WORK/rail-launch"
+mkdir -p "$RAIL_LAUNCH"
+printf '%s\n' "#!/usr/bin/env bash" "exit 0" > "$WORK/not-executable.sh"
+chmod 000 "$WORK/not-executable.sh"
+cat > "$WORK/launch-stage.toml" <<TOML
+version = 1
+
+[gate]
+fast_budget_seconds = 8.0
+exclusions = [".git/**", ".hermes/hermes_gate_runner.py"]
+
+[[fast]]
+name = "diff-check"
+argv = ["python3", ".hermes/hermes_gate_runner.py", "diff-check", "{files}"]
+timeout_seconds = 4.0
+globs = ["**/*"]
+
+[[full]]
+name = "missing-command"
+argv = ["$WORK/definitely-not-installed-command", "{files}"]
+timeout_seconds = 10.0
+globs = ["**/*"]
+
+[[full]]
+name = "not-executable"
+argv = ["$WORK/not-executable.sh", "{files}"]
+timeout_seconds = 10.0
+globs = ["**/*"]
+
+[[full]]
+name = "empty-argv"
+argv = []
+timeout_seconds = 10.0
+globs = ["**/*"]
+
+[[full]]
+name = "non-string-argv"
+argv = ["python3", 7]
+timeout_seconds = 10.0
+globs = ["**/*"]
+
+[[full]]
+name = "sentinel"
+argv = ["python3", "-c", "raise SystemExit(0)", "{files}"]
+timeout_seconds = 10.0
+globs = ["**/*"]
+TOML
+rail_fixture "$RAIL_LAUNCH" "$WORK/launch-stage.toml"
+RAIL_LAUNCH_BASE="$(cat "$RAIL_LAUNCH.base")"
+RAIL_OUT="$(cd "$RAIL_LAUNCH" && python3 .hermes/hermes_gate_runner.py full \
+  --base "$RAIL_LAUNCH_BASE")"
+RAIL_EXIT=$?
+check "stage launch errors do not abort the remaining stages" \
+  "missing-command:FAIL,not-executable:FAIL,empty-argv:ERROR,non-string-argv:ERROR,sentinel:PASS" \
+  "$(printf '%s' "$RAIL_OUT" | rail_stages)"
+check "unusable declarations surface as an error" "ERROR" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "unusable declarations exit nonzero" 1 "$RAIL_EXIT"
+printf '%s' "$RAIL_OUT" | grep -Fq "unusable stage declarations: empty-argv, non-string-argv"
+check "error names every unusable stage" 0 "$?"
+printf '%s' "$RAIL_OUT" | grep -Fq "failed stages: missing-command, not-executable"
+check "error still names the stages that failed to launch" 0 "$?"
+chmod 700 "$WORK/not-executable.sh"
+
+# 10. The shipped workflow wires the range, and the runner keeps its repository patch,
+#    so an upstream byte-for-byte reinstall cannot quietly restore the vacuous rail.
+grep -Fq "fetch-depth: 0" "$REPO_DIR/.github/workflows/hermes-quality.yml"
+check "quality workflow fetches the base commit" 0 "$?"
+grep -Fq "HERMES_GATE_BASE: \${{ github.event.pull_request.base.sha }}" \
+  "$REPO_DIR/.github/workflows/hermes-quality.yml"
+check "quality workflow passes the pull request base sha" 0 "$?"
+grep -Fq "hermes_gate_runner.py full --all" "$REPO_DIR/.github/workflows/hermes-quality.yml"
+check "quality workflow sweeps every byte outside pull requests" 0 "$?"
+grep -Fq 'RUNNER_PATCH = "hermes-labs/review-range-1"' "$RAIL_RUNNER"
+check "repository runner carries its review-range patch" 0 "$?"
+python3 - "$RAIL_PROFILE" "$RAIL_RUNNER" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+profile = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+# The patched runner is this repository's own source, so gate and review scope must
+# see it; the generated upstream profile excluded it as a byte-for-byte copy.
+assert ".hermes/hermes_gate_runner.py" not in profile["gate"]["exclusions"]
+assert profile["review"]["timeout_seconds"] >= 600.0
+PY
+check "profile keeps the patched runner in review scope" 0 "$?"
 
 echo
 echo "$PASS passed, $FAIL failed"
