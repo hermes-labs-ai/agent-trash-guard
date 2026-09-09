@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # This job runs the pull request's own scripts, so the job token must not
+          # stay behind in .git/config where they could read it.
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"

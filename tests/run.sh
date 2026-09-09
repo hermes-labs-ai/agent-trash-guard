@@ -527,6 +527,42 @@ RAIL_EXIT=$?
 check "unresolvable base errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
 check "unresolvable base exits nonzero" 1 "$RAIL_EXIT"
 
+# 5b. A base that is named but empty is a broken configuration, never a silent fall
+#     back to the worktree scope a hosted checkout does not have.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base "")"
+RAIL_EXIT=$?
+check "empty --base errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "empty --base exits nonzero" 2 "$RAIL_EXIT"
+printf '%s' "$RAIL_OUT" | grep -Fq -- "--base was supplied but empty"
+check "empty --base names the flag" 0 "$?"
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base=)"
+RAIL_EXIT=$?
+check "empty --base= errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "empty --base= exits nonzero" 2 "$RAIL_EXIT"
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="" python3 .hermes/hermes_gate_runner.py full)"
+RAIL_EXIT=$?
+check "empty HERMES_GATE_BASE errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "empty HERMES_GATE_BASE exits nonzero" 2 "$RAIL_EXIT"
+printf '%s' "$RAIL_OUT" | grep -Fq "HERMES_GATE_BASE was supplied but empty"
+check "empty HERMES_GATE_BASE names the variable" 0 "$?"
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="   " python3 .hermes/hermes_gate_runner.py full)"
+RAIL_EXIT=$?
+check "whitespace HERMES_GATE_BASE errors" "ERROR" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "whitespace HERMES_GATE_BASE exits nonzero" 2 "$RAIL_EXIT"
+
+# 5c. An absent base still means the local worktree scope, on a clean and a dirty tree.
+RAIL_OUT="$(cd "$RAIL" && env -u HERMES_GATE_BASE python3 .hermes/hermes_gate_runner.py full)"
+RAIL_EXIT=$?
+check "absent base keeps the worktree scope on a clean tree" "" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field range)"
+check "absent base is not an error" 0 "$RAIL_EXIT"
+printf '%s \n' "worktree trailing whitespace" >> "$RAIL/clean.txt"
+RAIL_OUT="$(cd "$RAIL" && env -u HERMES_GATE_BASE python3 .hermes/hermes_gate_runner.py full)"
+check "absent base still reviews the dirty worktree" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+rail_git "$RAIL" checkout -q -- clean.txt
+
 # 6. Manual dispatch reviews every committed byte.
 RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --all)"
 check "--all fails on committed whitespace" "FAIL" \
@@ -673,8 +709,9 @@ printf '%s' "$RAIL_OUT" | grep -Fq "failed stages: missing-command, not-executab
 check "error still names the stages that failed to launch" 0 "$?"
 chmod 700 "$WORK/not-executable.sh"
 
-# 10. The shipped workflow wires the range, and the runner keeps its repository patch,
-#    so an upstream byte-for-byte reinstall cannot quietly restore the vacuous rail.
+# 10. The shipped workflows wire the range and keep the job token out of reach of the
+#    pull request code they run. The runner's patch is pinned by the behaviour above
+#    (sections 2-5c), not by a version string an upstream reinstall could keep.
 grep -Fq "fetch-depth: 0" "$REPO_DIR/.github/workflows/hermes-quality.yml"
 check "quality workflow fetches the base commit" 0 "$?"
 grep -Fq "HERMES_GATE_BASE: \${{ github.event.pull_request.base.sha }}" \
@@ -682,8 +719,32 @@ grep -Fq "HERMES_GATE_BASE: \${{ github.event.pull_request.base.sha }}" \
 check "quality workflow passes the pull request base sha" 0 "$?"
 grep -Fq "hermes_gate_runner.py full --all" "$REPO_DIR/.github/workflows/hermes-quality.yml"
 check "quality workflow sweeps every byte outside pull requests" 0 "$?"
-grep -Fq 'RUNNER_PATCH = "hermes-labs/review-range-1"' "$RAIL_RUNNER"
-check "repository runner carries its review-range patch" 0 "$?"
+python3 - "$REPO_DIR/.github/workflows" <<'PY'
+import pathlib
+import sys
+
+workflows = sorted(pathlib.Path(sys.argv[1]).glob("*.yml"))
+assert workflows, "no workflows found"
+for workflow in workflows:
+    lines = workflow.read_text().splitlines()
+    checkouts = 0
+    for index, line in enumerate(lines):
+        if "uses: actions/checkout" not in line:
+            continue
+        checkouts += 1
+        indent = len(line) - len(line.lstrip())
+        # The step body is every following line indented deeper than the step itself.
+        body = []
+        for follow in lines[index + 1:]:
+            if follow.strip() and len(follow) - len(follow.lstrip()) <= indent:
+                break
+            body.append(follow.strip())
+        assert "persist-credentials: false" in body, (
+            f"{workflow.name}: checkout step keeps the job token in .git/config"
+        )
+    assert checkouts, f"{workflow.name}: no checkout step found"
+PY
+check "every workflow checkout drops the job token before running pull request code" 0 "$?"
 python3 - "$RAIL_PROFILE" "$RAIL_RUNNER" <<'PY'
 import pathlib
 import sys
