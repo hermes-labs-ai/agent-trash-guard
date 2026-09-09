@@ -684,6 +684,18 @@ grep -Fq "hermes_gate_runner.py full --all" "$REPO_DIR/.github/workflows/hermes-
 check "quality workflow sweeps every byte outside pull requests" 0 "$?"
 grep -Fq 'RUNNER_PATCH = "hermes-labs/review-range-1"' "$RAIL_RUNNER"
 check "repository runner carries its review-range patch" 0 "$?"
+python3 - "$RAIL_PROFILE" "$RAIL_RUNNER" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+profile = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+# The patched runner is this repository's own source, so gate and review scope must
+# see it; the generated upstream profile excluded it as a byte-for-byte copy.
+assert ".hermes/hermes_gate_runner.py" not in profile["gate"]["exclusions"]
+assert profile["review"]["timeout_seconds"] >= 600.0
+PY
+check "profile keeps the patched runner in review scope" 0 "$?"
 
 echo
 echo "$PASS passed, $FAIL failed"
