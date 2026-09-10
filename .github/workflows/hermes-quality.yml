@@ -16,6 +16,7 @@ jobs:
           # The gate compares the pull request base with HEAD, so the base commit
           # has to be in the checkout.
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
