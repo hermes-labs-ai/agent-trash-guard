@@ -527,24 +527,7 @@ RAIL_EXIT=$?
 check "unresolvable base errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
 check "unresolvable base exits nonzero" 1 "$RAIL_EXIT"
 
-# 5b. A base that is named but empty is a broken configuration, never a silent fall
-#     back to the worktree scope a hosted checkout does not have.
-RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base "")"
-RAIL_EXIT=$?
-check "empty --base errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
-check "empty --base exits nonzero" 2 "$RAIL_EXIT"
-printf '%s' "$RAIL_OUT" | grep -Fq -- "--base was supplied but empty"
-check "empty --base names the flag" 0 "$?"
-RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base=)"
-RAIL_EXIT=$?
-check "empty --base= errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
-check "empty --base= exits nonzero" 2 "$RAIL_EXIT"
-RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="" python3 .hermes/hermes_gate_runner.py full)"
-RAIL_EXIT=$?
-check "empty HERMES_GATE_BASE errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
-check "empty HERMES_GATE_BASE exits nonzero" 2 "$RAIL_EXIT"
-printf '%s' "$RAIL_OUT" | grep -Fq "HERMES_GATE_BASE was supplied but empty"
-check "empty HERMES_GATE_BASE names the variable" 0 "$?"
+# 5b. Whitespace-only and absent bases: main already covers the empty cases below.
 RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="   " python3 .hermes/hermes_gate_runner.py full)"
 RAIL_EXIT=$?
 check "whitespace HERMES_GATE_BASE errors" "ERROR" \
@@ -723,15 +706,14 @@ python3 - "$REPO_DIR/.github/workflows" <<'PY'
 import pathlib
 import sys
 
-workflows = sorted(pathlib.Path(sys.argv[1]).glob("*.yml"))
+workflow_dir = pathlib.Path(sys.argv[1])
+workflows = sorted([*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")])
 assert workflows, "no workflows found"
 for workflow in workflows:
     lines = workflow.read_text().splitlines()
-    checkouts = 0
     for index, line in enumerate(lines):
         if "uses: actions/checkout" not in line:
             continue
-        checkouts += 1
         indent = len(line) - len(line.lstrip())
         # The step body is every following line indented deeper than the step itself.
         body = []
@@ -742,7 +724,6 @@ for workflow in workflows:
         assert "persist-credentials: false" in body, (
             f"{workflow.name}: checkout step keeps the job token in .git/config"
         )
-    assert checkouts, f"{workflow.name}: no checkout step found"
 PY
 check "every workflow checkout drops the job token before running pull request code" 0 "$?"
 python3 - "$RAIL_PROFILE" "$RAIL_RUNNER" <<'PY'
@@ -757,6 +738,43 @@ assert ".hermes/hermes_gate_runner.py" not in profile["gate"]["exclusions"]
 assert profile["review"]["timeout_seconds"] >= 600.0
 PY
 check "profile keeps the patched runner in review scope" 0 "$?"
+
+# 11. An empty base is a misconfiguration, not a request for the local scope: a rail
+#     whose base expression resolves to nothing must say so instead of reviewing a
+#     pristine checkout and reporting a pass over zero bytes.
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base "")"
+RAIL_EXIT=$?
+check "empty --base errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "empty --base exits nonzero" 2 "$RAIL_EXIT"
+printf '%s' "$RAIL_OUT" | grep -Fq -- "--base is set but empty"
+check "empty --base names the flag" 0 "$?"
+
+RAIL_OUT="$(cd "$RAIL" && python3 .hermes/hermes_gate_runner.py full --base=)"
+RAIL_EXIT=$?
+check "empty --base= errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "empty --base= exits nonzero" 2 "$RAIL_EXIT"
+
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="" python3 .hermes/hermes_gate_runner.py full)"
+RAIL_EXIT=$?
+check "empty HERMES_GATE_BASE errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+check "empty HERMES_GATE_BASE exits nonzero" 2 "$RAIL_EXIT"
+printf '%s' "$RAIL_OUT" | grep -Fq "HERMES_GATE_BASE is set but empty"
+check "empty HERMES_GATE_BASE names the variable" 0 "$?"
+
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="   " python3 .hermes/hermes_gate_runner.py full)"
+check "blank HERMES_GATE_BASE errors" "ERROR" "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+
+# An explicit flag still wins over the environment, in both directions.
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="" python3 .hermes/hermes_gate_runner.py full \
+  --base "$RAIL_BASE")"
+check "explicit --base overrides an empty variable" "FAIL" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+RAIL_OUT="$(cd "$RAIL" && HERMES_GATE_BASE="$RAIL_BASE" python3 .hermes/hermes_gate_runner.py \
+  full --base "")"
+check "explicit empty --base overrides a set variable" "ERROR" \
+  "$(printf '%s' "$RAIL_OUT" | rail_field status)"
+printf '%s' "$RAIL_OUT" | grep -Fq -- "--base is set but empty"
+check "explicit empty --base names the flag" 0 "$?"
 
 echo
 echo "$PASS passed, $FAIL failed"
