@@ -16,6 +16,8 @@ jobs:
           # The gate compares the pull request base with HEAD, so the base commit
           # has to be in the checkout.
           fetch-depth: 0
+          # The gate then runs the pull request's own runner and declared stages, so
+          # the job token must not stay behind in .git/config for them to read.
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
