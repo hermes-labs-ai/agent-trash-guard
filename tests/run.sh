@@ -102,6 +102,9 @@ assert portable["version"] == "0.1.2"
 skill_text = skill.read_text()
 assert skill_text.startswith("---\nname: agent-trash-guard\ndescription: ")
 assert "not universal deletion protection" in skill_text
+# Strict YAML frontmatter parsers (the skills CLI) reject ": " in a plain scalar.
+description = skill_text.split("\n", 3)[2].removeprefix("description: ")
+assert ": " not in description and not description.startswith(("'", '"')), description
 skills = sorted(
     path.relative_to(root).as_posix() for path in root.rglob("SKILL.md")
     if ".git" not in path.parts

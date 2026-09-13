@@ -1,6 +1,6 @@
 ---
 name: agent-trash-guard
-description: Move files to recoverable trash instead of deleting them, list what an agent trashed, and restore it with the agent-trash CLI. Trigger when a shell command was blocked with "trash-guard: blocked a permanent delete", when the user asks to delete or clean up files during an agent session, or when the user wants to see or undo something an agent removed. The guard covers common shell delete commands only; it is not universal deletion protection.
+description: Move files to recoverable trash instead of deleting them, list what an agent trashed, and restore it with the agent-trash CLI. Trigger when trash-guard blocked a permanent delete in a shell command, when the user asks to delete or clean up files during an agent session, or when the user wants to see or undo something an agent removed. The guard covers common shell delete commands only; it is not universal deletion protection.
 ---
 
 agent-trash-guard (https://github.com/hermes-labs-ai/agent-trash-guard) has two
