@@ -4,6 +4,10 @@
 Claude and Codex execute their installed package in isolation, so their adapter
 roots must each contain the hook and CLI runtime. These files are generated
 from the repository root; never edit a copy by hand.
+
+Codex ignores a `.codex-plugin` manifest, and so its hooks, when a portable
+root `plugin.json` exists. The Codex guard therefore stays in its own adapter
+and carries a byte copy of the canonical skill.
 """
 from __future__ import annotations
 
@@ -20,7 +24,11 @@ RUNTIME_FILES = (
     Path("bin/claude-trash"),
     Path("lib/agent_trash.py"),
 )
-TARGETS = (Path("integrations/claude"), Path("integrations/codex"))
+SKILL_FILE = Path("skills/agent-trash-guard/SKILL.md")
+TARGETS = {
+    Path("integrations/claude"): RUNTIME_FILES,
+    Path("integrations/codex"): RUNTIME_FILES + (SKILL_FILE,),
+}
 
 
 def main() -> int:
@@ -29,8 +37,8 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     stale: list[Path] = []
-    for target in TARGETS:
-        for relative_path in RUNTIME_FILES:
+    for target, files in TARGETS.items():
+        for relative_path in files:
             source = root / relative_path
             destination = root / target / relative_path
             if not destination.is_file() or not filecmp.cmp(source, destination, shallow=False):

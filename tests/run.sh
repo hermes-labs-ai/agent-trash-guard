@@ -86,8 +86,39 @@ import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-assert not (root / ".claude-plugin" / "plugin.json").exists()
+# Codex prefers a portable root plugin.json and would ignore these hooks.
 assert not (root / ".codex-plugin" / "plugin.json").exists()
+
+# The root is one portable Agent Plugin with one canonical skill.
+skill = root / "skills" / "agent-trash-guard" / "SKILL.md"
+portable = json.loads((root / "plugin.json").read_text())
+assert portable["$schema"] == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+assert set(portable) <= {
+    "$schema", "name", "version", "description", "author", "homepage",
+    "repository", "license", "keywords", "extensions",
+}
+assert portable["name"] == "agent-trash-guard"
+assert portable["version"] == "0.1.2"
+skill_text = skill.read_text()
+assert skill_text.startswith("---\nname: agent-trash-guard\ndescription: ")
+assert "not universal deletion protection" in skill_text
+skills = sorted(
+    path.relative_to(root).as_posix() for path in root.rglob("SKILL.md")
+    if ".git" not in path.parts
+)
+assert skills == [
+    "integrations/codex/skills/agent-trash-guard/SKILL.md",
+    "skills/agent-trash-guard/SKILL.md",
+], skills
+
+root_claude = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+assert root_claude["name"] == "agent-trash-guard"
+assert root_claude["version"] == portable["version"]
+assert root_claude["description"] == portable["description"]
+# Reuse the Claude hook file; the root hooks/hooks.json is Gemini's schema.
+assert root_claude["hooks"] == "./integrations/claude/hooks/hooks.json"
+for key in ("author", "homepage", "repository", "license"):
+    assert root_claude[key] == portable[key], key
 
 gemini_manifest = json.loads((root / "gemini-extension.json").read_text())
 assert gemini_manifest["name"] == "agent-trash-guard"
@@ -110,6 +141,12 @@ assert marketplace["name"] == "hermes-labs"
 assert marketplace_entry["name"] == manifest["name"]
 assert marketplace_entry["version"] == manifest["version"]
 assert marketplace_entry["source"] == "./integrations/claude"
+root_entry = marketplace["plugins"][1]
+assert len(marketplace["plugins"]) == 2
+assert root_entry["name"] == root_claude["name"]
+assert root_entry["version"] == root_claude["version"]
+assert (root / root_entry["source"]).resolve() == root.resolve()
+assert filecmp.cmp(skill, root / "integrations" / "codex" / "skills" / "agent-trash-guard" / "SKILL.md", shallow=False)
 hooks = json.loads((claude_root / "hooks" / "hooks.json").read_text())
 entry = hooks["hooks"]["PreToolUse"][0]
 assert entry["matcher"] == "Bash"
