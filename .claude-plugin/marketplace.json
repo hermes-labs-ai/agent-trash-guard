@@ -12,6 +12,13 @@
       "description": "Blocks permanent deletes and redirects Claude Code to a recoverable trash workflow.",
       "version": "0.1.2",
       "category": "development"
+    },
+    {
+      "name": "agent-trash-guard",
+      "source": ".",
+      "description": "Blocks permanent deletes in Claude Code and adds the agent-trash-guard skill and agent-trash CLI for recoverable trash.",
+      "version": "0.1.2",
+      "category": "development"
     }
   ]
 }
