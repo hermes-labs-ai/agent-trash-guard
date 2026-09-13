@@ -59,9 +59,14 @@ directories. It exits 0 only when every item was restored.
 - Exit 1 with `no such entry` means the id is wrong: run `list` and ask.
 - Exit 1 with `destination exists, skipping (use --force)` means a newer file
   occupies the path. Show the user the conflict. Pass `--force` only with their
-  agreement; the displaced file is kept inside the entry as
-  `<name>.displaced`, so it stays recoverable.
-- An entry is removed after a complete restore that leaves nothing behind.
+  agreement. `--force` moves the newer file to
+  `$AGENT_TRASH_DIR/<id>/<name>.displaced` (or `.displaced.1`, ...). That file
+  is not in the manifest: `list` does not show it, `restore` cannot bring it
+  back, and `empty` deletes it with the entry. Tell the user its path; it can
+  only be recovered by moving it out by hand.
+- An entry is removed after a complete restore that leaves nothing behind. An
+  entry that still holds a `.displaced` file stays, and restoring it again
+  exits 1 with `missing from trash` for the items already restored.
 
 ## Boundaries
 
