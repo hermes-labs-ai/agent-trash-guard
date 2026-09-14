@@ -1,0 +1,14 @@
+{
+  "@context": "https://w3id.org/codemeta/3.1",
+  "@type": "SoftwareSourceCode",
+  "name": "agent-trash-guard",
+  "description": "A safety net for coding-agent sessions: permanent shell deletes get blocked and redirected to a recoverable trash directory, with native pre-tool adapters for Claude Code, Codex CLI, and Gemini CLI.",
+  "codeRepository": "https://github.com/hermes-labs-ai/agent-trash-guard",
+  "version": "0.1.2",
+  "license": "https://spdx.org/licenses/MIT",
+  "programmingLanguage": ["Python", "Shell"],
+  "runtimePlatform": "Python 3 (stdlib only), Bash",
+  "author": [{"@type": "Person", "givenName": "Rolando", "familyName": "Bosch Rodriguez", "identifier": "https://orcid.org/0009-0005-4896-1112"}],
+  "url": "https://github.com/hermes-labs-ai/agent-trash-guard",
+  "keywords": ["safety", "trash", "recovery", "hooks", "skills", "coding agents"]
+}

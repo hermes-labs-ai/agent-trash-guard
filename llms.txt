@@ -1,0 +1,45 @@
+# agent-trash-guard
+
+> Recoverable-delete safety net for coding agents: blocks permanent-delete shell commands and redirects them to a trash you can inspect and restore.
+
+Use this repo when you need to:
+- stop a coding agent's `rm`, `unlink`, `shred`, `rmdir`, `find -delete`/`find -exec rm`, or `git clean -f` from running unattended
+- give an agent a recoverable alternative (`agent-trash put`, `list`, `restore`, `empty`) instead of an unrecoverable delete
+- install a native pre-tool hook in Claude Code, Codex CLI, or Gemini CLI from one portable Agent Plugin root
+- teach an agent the trash workflow via the bundled `agent-trash-guard` skill
+
+## Docs
+
+- [README](https://github.com/hermes-labs-ai/agent-trash-guard/blob/main/README.md) — install per host, what gets blocked, the escape hatch, and how the hook works
+- [skills/agent-trash-guard/SKILL.md](https://github.com/hermes-labs-ai/agent-trash-guard/blob/main/skills/agent-trash-guard/SKILL.md) — canonical skill an agent reads to use the CLI and know the guard's limits
+- [tests/recoverability-demo.sh](https://github.com/hermes-labs-ai/agent-trash-guard/blob/main/tests/recoverability-demo.sh) — self-contained proof the guard blocks a delete and the trash round-trip loses nothing
+
+## Optional
+
+- [CITATION.cff](https://github.com/hermes-labs-ai/agent-trash-guard/blob/main/CITATION.cff) — how to cite this software
+- [SECURITY.md](https://github.com/hermes-labs-ai/agent-trash-guard/blob/main/SECURITY.md) — how to report a vulnerability
+- [CONTRIBUTING.md](https://github.com/hermes-labs-ai/agent-trash-guard/blob/main/CONTRIBUTING.md) — how to file issues and send pull requests
+
+## Install
+
+- Claude Code: `claude plugin marketplace add hermes-labs-ai/agent-trash-guard && claude plugin install agent-trash-guard@hermes-labs` — the plugin is also listed in the org-wide marketplace `hermes-labs-ai/claude-plugins` as `claude-trash-guard`, for discovery alongside other Hermes Labs Claude Code plugins.
+- Codex CLI: `codex plugin marketplace add hermes-labs-ai/agent-trash-guard && codex plugin add agent-trash-guard@hermes-labs`
+- Gemini CLI: `gemini extensions install https://github.com/hermes-labs-ai/agent-trash-guard --ref main`
+- Skill only (any host that reads skills.sh): `npx skills add https://github.com/hermes-labs-ai/agent-trash-guard --skill agent-trash-guard`
+
+## Do not use this repo as
+
+- a sandbox or filesystem permission system — it pattern-matches specific delete commands, it does not confine what an agent can touch
+- protection against overwrites or truncations — out of scope for v0.1
+- coverage for every possible delete spelling — it is a hook over known Bash/`run_shell_command` patterns, not a kernel-level guarantee
+- a supported integration for every agent runtime — OpenClaw and local Hermes Agent/client tooling are noted as adapter candidates in the README, not live integrations
+
+## Key facts
+
+- No dependencies beyond Python 3 (stdlib only) and bash
+- Guard behavior, the `agent-trash` CLI, and the skill are exercised by `./tests/run.sh` and `tests/recoverability-demo.sh`
+- Current release: v0.1.2, MIT licensed
+
+## About Hermes Labs
+
+Hermes Labs is an independent AI-reliability lab building open-source tools that catch silent failure modes in production AI. More at [hermes-labs.ai](https://hermes-labs.ai).
