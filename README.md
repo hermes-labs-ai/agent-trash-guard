@@ -1,5 +1,7 @@
 # agent-trash-guard
 
+[![CI](https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml)
+
 A safety net for coding-agent sessions: permanent deletes get blocked, and
 files get moved to a recoverable trash directory instead.
 
