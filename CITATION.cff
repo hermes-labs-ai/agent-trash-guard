@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use agent-trash-guard in your research or tooling, please cite it."
+title: "agent-trash-guard: Recoverable-Delete Safety Net for Coding Agents"
+type: software
+authors:
+  - family-names: "Bosch Rodriguez"
+    given-names: "Rolando"
+    orcid: "https://orcid.org/0009-0005-4896-1112"
+    affiliation: "Hermes Labs"
+version: "0.1.2"
+license: "MIT"
+repository-code: "https://github.com/hermes-labs-ai/agent-trash-guard"
+url: "https://github.com/hermes-labs-ai/agent-trash-guard"
+abstract: >
+  agent-trash-guard is a safety net for coding-agent sessions: it intercepts
+  permanent-delete shell commands (rm, unlink, shred, rmdir, find -delete,
+  git clean -f) before they run and redirects them to a recoverable trash
+  directory via the agent-trash CLI. It ships as one portable Agent Plugin
+  with native pre-tool adapters for Claude Code, Codex CLI, and Gemini CLI,
+  backed by a single detector and a canonical skill that teaches an agent the
+  trash workflow. It has no dependencies beyond Python 3 (stdlib only) and
+  bash.
+keywords:
+  - "coding agents"
+  - "AI safety"
+  - "recoverable deletion"
+  - "pre-tool hooks"
+  - "Claude Code"
+  - "Codex CLI"
+  - "Gemini CLI"
