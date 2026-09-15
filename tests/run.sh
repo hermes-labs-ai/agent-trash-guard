@@ -65,6 +65,21 @@ check "hook blocks rm in braces"    2 "$(hook_exit "$(bash_event '{ rm -rf x; }'
 check "Gemini hook blocks rm"       2 "$(hook_exit "$(gemini_event 'rm -rf build')")"
 check "Gemini hook allows ls"       0 "$(hook_exit "$(gemini_event 'ls -la')")"
 
+# --- hook: blocks deletes nested in a shell -c / eval argument ---
+check "hook blocks bash -c rm"      2 "$(hook_exit "$(bash_event "bash -c \"rm -rf build\"")")"
+check "hook blocks sh -c rm"        2 "$(hook_exit "$(bash_event "sh -c 'rm -rf build'")")"
+check "hook blocks zsh -c rm"       2 "$(hook_exit "$(bash_event "zsh -c 'rm -rf build'")")"
+check "hook blocks dash -c rm"      2 "$(hook_exit "$(bash_event "dash -c 'rm -rf build'")")"
+check "hook blocks ksh -c rm"       2 "$(hook_exit "$(bash_event "ksh -c 'rm -rf build'")")"
+check "hook blocks eval rm (quoted)" 2 "$(hook_exit "$(bash_event "eval \"rm -rf build\"")")"
+check "hook blocks eval rm (bare words)" 2 "$(hook_exit "$(bash_event 'eval rm -rf build')")"
+check "hook blocks env-wrapped bash -c rm" 2 "$(hook_exit "$(bash_event "env FOO=1 bash -c 'rm -rf build'")")"
+check "hook blocks zsh -c chained rm" 2 "$(hook_exit "$(bash_event 'zsh -c "cd /tmp && rm -rf build"')")"
+check "hook blocks bash -lc rm"     2 "$(hook_exit "$(bash_event "bash -lc 'rm -rf build'")")"
+check "hook blocks sh -c with &&"   2 "$(hook_exit "$(bash_event "sh -c 'echo hi && rm -rf build'")")"
+check "hook blocks nested bash -c sh -c rm" 2 "$(hook_exit "$(bash_event "bash -c \"sh -c 'rm -rf build'\"")")"
+check "hook blocks find -delete nested in bash -c" 2 "$(hook_exit "$(bash_event "bash -c \"find . -name '*.pyc' -delete\"")")"
+
 # --- hook: allows everything else ---
 check "hook allows ls"              0 "$(hook_exit "$(bash_event 'ls -la')")"
 check "hook allows rm as word"      0 "$(hook_exit "$(bash_event 'echo rm is just a word')")"
@@ -77,6 +92,12 @@ check "hook ignores non-Bash tool"  0 "$(hook_exit '{"tool_name":"Read","tool_in
 check "hook ignores bad json"       0 "$(hook_exit 'not json at all')"
 printf '%s' "$(bash_event 'rm -rf build')" | TRASH_GUARD_ALLOW=1 python3 "$HOOK" 2>/dev/null
 check "hook allows env override"    0 "$?"
+
+# --- hook: quoted text that is NOT an interpreter/eval argument stays inert ---
+check "hook allows python3 -c string mentioning rm" 0 "$(hook_exit "$(bash_event "python3 -c \"print('Bash(rm *)')\"")")"
+check "hook allows grep for rm pattern" 0 "$(hook_exit "$(bash_event "grep 'rm -rf' notes.md")")"
+check "hook allows echo rm in quotes" 0 "$(hook_exit "$(bash_event 'echo "rm"')")"
+check "hook allows bash running a script file" 0 "$(hook_exit "$(bash_event 'bash cleanup.sh')")"
 
 # --- package roots: native schemas and generated cache-isolated runtimes ---
 python3 - "$REPO_DIR" <<'PY'
