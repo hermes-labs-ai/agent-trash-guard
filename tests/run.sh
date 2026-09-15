@@ -79,9 +79,17 @@ check "hook blocks bash -lc rm"     2 "$(hook_exit "$(bash_event "bash -lc 'rm -
 check "hook blocks sh -c with &&"   2 "$(hook_exit "$(bash_event "sh -c 'echo hi && rm -rf build'")")"
 check "hook blocks nested bash -c sh -c rm" 2 "$(hook_exit "$(bash_event "bash -c \"sh -c 'rm -rf build'\"")")"
 check "hook blocks find -delete nested in bash -c" 2 "$(hook_exit "$(bash_event "bash -c \"find . -name '*.pyc' -delete\"")")"
+check "hook blocks bare assignment rm"   2 "$(hook_exit "$(bash_event 'FOO=1 rm -rf build')")"
+check "hook blocks bare assignment bash -c" 2 "$(hook_exit "$(bash_event "FOO=1 bash -c 'rm -rf build'")")"
+check "hook blocks sudo -u rm"      2 "$(hook_exit "$(bash_event 'sudo -u root rm -rf build')")"
+check "hook blocks sudo -n rm"      2 "$(hook_exit "$(bash_event 'sudo -n rm -rf build')")"
+check "hook blocks rm after if"     2 "$(hook_exit "$(bash_event 'if rm -rf x; then echo bad; fi')")"
+check "hook blocks rm after while"  2 "$(hook_exit "$(bash_event 'while rm -rf x; do echo bad; done')")"
+check "hook blocks rm after bang"   2 "$(hook_exit "$(bash_event '! rm -rf x')")"
 
 # --- hook: allows everything else ---
 check "hook allows ls"              0 "$(hook_exit "$(bash_event 'ls -la')")"
+check "hook allows sudo -u root ls" 0 "$(hook_exit "$(bash_event 'sudo -u root ls -la')")"
 check "hook allows rm as word"      0 "$(hook_exit "$(bash_event 'echo rm is just a word')")"
 check "hook allows rm-suffix cmd"   0 "$(hook_exit "$(bash_event 'npm run charm')")"
 check "hook allows git rm"          0 "$(hook_exit "$(bash_event 'git rm --cached file.txt')")"
