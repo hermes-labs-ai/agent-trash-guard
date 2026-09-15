@@ -20,7 +20,12 @@ SHELL_INTERPRETERS = {"bash", "sh", "zsh", "dash", "ksh", "ash"}
 # Prefixes that pass command position through to the next real token without
 # being a command themselves.
 WRAPPER_CMDS = {"sudo", "command", "nohup", "time"}
-KEYWORDS = {"then", "do", "else", "elif"}
+KEYWORDS = {"then", "do", "else", "elif", "if", "while", "until", "!"}
+
+# Short wrapper flags (sudo's, mainly) that consume a following argument, so
+# that argument doesn't get mistaken for the command being resolved (e.g. the
+# `root` in `sudo -u root rm -rf x`, not `rm`, follows `-u`).
+WRAPPER_VALUE_FLAGS = {"-C", "-D", "-g", "-h", "-p", "-R", "-r", "-T", "-U", "-u"}
 
 # Characters that separate shell statements/command groups. A token made up
 # entirely of these characters (`;`, `&`, `&&`, `(`, `)`, `{`, `}`, a
@@ -68,14 +73,25 @@ def _is_operator(token):
 
 
 def _resolve_head(tokens, start):
-    """Walk past wrapper prefixes (sudo/command/nohup/time, env VAR=val...,
-    xargs [-flags]) to the token that is actually executed. Returns the
-    index of that token, or None if the statement runs out first."""
+    """Walk past wrapper prefixes (bare VAR=val assignments, sudo [-flags]/
+    command/nohup/time, env VAR=val..., xargs [-flags]) to the token that is
+    actually executed. Returns the index of that token, or None if the
+    statement runs out first."""
     i, n = start, len(tokens)
     while i < n:
         tok = tokens[i]
+        # `FOO=1 BAR=2 rm -rf x` sets a temporary environment for the next
+        # simple command without the literal `env` keyword.
+        if ENV_ASSIGNMENT.match(tok) and not _is_operator(tok):
+            i += 1
+            continue
         if tok in WRAPPER_CMDS:
             i += 1
+            while i < n and tokens[i].startswith("-") and not _is_operator(tokens[i]):
+                flag = tokens[i]
+                i += 1
+                if flag in WRAPPER_VALUE_FLAGS and i < n and not tokens[i].startswith("-"):
+                    i += 1
             continue
         if tok == "env":
             i += 1
