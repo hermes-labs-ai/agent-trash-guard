@@ -10,14 +10,14 @@
       "name": "claude-trash-guard",
       "source": "./integrations/claude",
       "description": "Blocks permanent deletes and redirects Claude Code to a recoverable trash workflow.",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "category": "development"
     },
     {
       "name": "agent-trash-guard",
       "source": ".",
       "description": "Blocks permanent deletes in Claude Code and adds the agent-trash-guard skill and agent-trash CLI for recoverable trash.",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "category": "development"
     }
   ]

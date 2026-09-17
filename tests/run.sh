@@ -127,7 +127,7 @@ assert set(portable) <= {
     "repository", "license", "keywords", "extensions",
 }
 assert portable["name"] == "agent-trash-guard"
-assert portable["version"] == "0.1.2"
+assert portable["version"] == "0.1.3"
 skill_text = skill.read_text()
 assert skill_text.startswith("---\nname: agent-trash-guard\ndescription: ")
 assert "not universal deletion protection" in skill_text
@@ -154,7 +154,7 @@ for key in ("author", "homepage", "repository", "license"):
 
 gemini_manifest = json.loads((root / "gemini-extension.json").read_text())
 assert gemini_manifest["name"] == "agent-trash-guard"
-assert gemini_manifest["version"] == "0.1.2"
+assert gemini_manifest["version"] == "0.1.3"
 gemini_hooks = json.loads((root / "hooks" / "hooks.json").read_text())
 gemini_entry = gemini_hooks["hooks"]["BeforeTool"][0]
 assert gemini_entry["matcher"] == "run_shell_command"
@@ -166,7 +166,7 @@ assert gemini_entry["hooks"][0]["timeout"] == 8000
 claude_root = root / "integrations" / "claude"
 manifest = json.loads((claude_root / ".claude-plugin" / "plugin.json").read_text())
 assert manifest["name"] == "claude-trash-guard"
-assert manifest["version"] == "0.1.2"
+assert manifest["version"] == "0.1.3"
 marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
 marketplace_entry = marketplace["plugins"][0]
 assert marketplace["name"] == "hermes-labs"
