@@ -38,7 +38,7 @@ Use this repo when you need to:
 
 - No dependencies beyond Python 3 (stdlib only) and bash
 - Guard behavior, the `agent-trash` CLI, and the skill are exercised by `./tests/run.sh` and `tests/recoverability-demo.sh`
-- Current release: v0.1.2, MIT licensed
+- Current release: v0.1.3, MIT licensed
 
 ## About Hermes Labs
 
