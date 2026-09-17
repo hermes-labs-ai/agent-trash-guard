@@ -35,6 +35,26 @@ The skill teaches an agent to use `agent-trash put`, `list`, and `restore`
 and states the guard's limits. A skills.sh install copies only the skill; it
 installs no hook and no CLI.
 
+### First safe check
+
+The host readback above confirms that the plugin, extension, or skill was
+registered; it does not by itself prove that a delete hook is active. After a
+native plugin or extension install (not a skills.sh-only install), run:
+
+```bash
+agent-trash list
+```
+
+This is read-only: it lists the configured trash and does not move or delete
+anything. In Codex, also complete the explicit `/hooks` trust review before
+treating delete interception as active. Until then, Codex loads the skill but
+skips its non-managed hook.
+
+The guard is a convenience layer, not universal deletion protection: it fails
+open when it cannot parse a hook event, has documented command-pattern limits,
+and its local trash is not a backup. Keep normal backups and inspect the
+supported-command boundaries below before relying on it for an important path.
+
 ## Claude Code
 
 `agent-trash-guard@hermes-labs` is the repository root. Its manifest reuses the
