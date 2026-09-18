@@ -17,6 +17,31 @@ TRASH_DIR = os.environ.get("AGENT_TRASH_DIR") or os.environ.get(
 )
 MANIFEST = "manifest.json"
 
+# Each host bundle (repo root, integrations/claude, integrations/codex) carries
+# a byte-identical copy of this file alongside its own plugin manifest. Read
+# the version from that manifest rather than hard-coding a second copy here.
+_MANIFEST_CANDIDATES = (
+    "plugin.json",
+    os.path.join(".codex-plugin", "plugin.json"),
+    os.path.join(".claude-plugin", "plugin.json"),
+)
+
+
+def bundle_version():
+    bundle_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    for candidate in _MANIFEST_CANDIDATES:
+        manifest_path = os.path.join(bundle_root, candidate)
+        if os.path.isfile(manifest_path):
+            try:
+                with open(manifest_path) as f:
+                    return json.load(f).get("version", "unknown")
+            except (OSError, ValueError):
+                continue
+    return "unknown"
+
+
+VERSION = bundle_version()
+
 
 def entry_dirs():
     if not os.path.isdir(TRASH_DIR):
@@ -160,6 +185,9 @@ def cmd_empty(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="agent-trash", description=__doc__)
+    parser.add_argument(
+        "--version", action="version", version="agent-trash {0}".format(VERSION)
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_put = sub.add_parser("put", help="move paths into recoverable trash")

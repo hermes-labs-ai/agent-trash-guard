@@ -507,6 +507,19 @@ check "restore returned b.txt" 0 "$(exists_exit "$WORK/project/sub/b.txt")"
 check "restore content intact" "keep me" "$(cat "$WORK/project/a.txt")"
 check "restored entry removed" 1 "$(python3 "$CLI" list | grep -c 'trash is empty')"
 
+# --- cli: --version reads back the same value across every host bundle ---
+ROOT_MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open('$REPO_DIR/plugin.json'))['version'])")"
+check "root --version matches root plugin.json" "agent-trash $ROOT_MANIFEST_VERSION" \
+  "$(python3 "$CLI" --version)"
+check "root --version exits 0" 0 "$?"
+check "claude bundle --version matches root" "agent-trash $ROOT_MANIFEST_VERSION" \
+  "$(python3 "$REPO_DIR/integrations/claude/bin/agent-trash" --version)"
+check "codex bundle --version matches root" "agent-trash $ROOT_MANIFEST_VERSION" \
+  "$(python3 "$REPO_DIR/integrations/codex/bin/agent-trash" --version)"
+GEMINI_MANIFEST_VERSION="$(python3 -c "import json; print(json.load(open('$REPO_DIR/gemini-extension.json'))['version'])")"
+check "gemini-extension.json version matches root plugin.json" "$ROOT_MANIFEST_VERSION" \
+  "$GEMINI_MANIFEST_VERSION"
+
 # --- cli: restore refuses to overwrite without --force ---
 echo "victim" > "$WORK/project/c.txt"
 python3 "$CLI" put "$WORK/project/c.txt" > /dev/null

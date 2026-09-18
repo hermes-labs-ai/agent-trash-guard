@@ -42,13 +42,16 @@ registered; it does not by itself prove that a delete hook is active. After a
 native plugin or extension install (not a skills.sh-only install), run:
 
 ```bash
+agent-trash --version
 agent-trash list
 ```
 
-This is read-only: it lists the configured trash and does not move or delete
-anything. In Codex, also complete the explicit `/hooks` trust review before
-treating delete interception as active. Until then, Codex loads the skill but
-skips its non-managed hook.
+Both are read-only: `--version` prints the installed CLI's bundled version
+(read from that host's own `plugin.json`/manifest, so it always matches what
+was actually installed), and `list` shows the configured trash. Neither moves
+or deletes anything. In Codex, also complete the explicit `/hooks` trust
+review before treating delete interception as active. Until then, Codex loads
+the skill but skips its non-managed hook.
 
 The guard is a convenience layer, not universal deletion protection: it fails
 open when it cannot parse a hook event, has documented command-pattern limits,
