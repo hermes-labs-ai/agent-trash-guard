@@ -167,6 +167,20 @@ claude_root = root / "integrations" / "claude"
 manifest = json.loads((claude_root / ".claude-plugin" / "plugin.json").read_text())
 assert manifest["name"] == "claude-trash-guard"
 assert manifest["version"] == "0.1.3"
+
+# Awesome Copilot's Agent Plugins v1.0.0 intake looks for plugin.json at the
+# submitted plugin root (integrations/claude), not inside .claude-plugin/.
+root_agent_plugin_path = claude_root / "plugin.json"
+assert root_agent_plugin_path.is_file(), "integrations/claude/plugin.json is missing"
+agent_plugin = json.loads(root_agent_plugin_path.read_text())
+assert agent_plugin["$schema"] == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+assert set(agent_plugin) <= {
+    "$schema", "name", "version", "description", "author", "homepage",
+    "repository", "license", "keywords", "extensions",
+}
+assert agent_plugin["name"] == manifest["name"] == "claude-trash-guard"
+assert agent_plugin["version"] == manifest["version"] == "0.1.3"
+
 marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
 marketplace_entry = marketplace["plugins"][0]
 assert marketplace["name"] == "hermes-labs"
