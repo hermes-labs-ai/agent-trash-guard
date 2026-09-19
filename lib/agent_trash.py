@@ -522,16 +522,33 @@ def scan_subtree(path):
     caller turns errors into UNKNOWN.
     """
     stats = {
-        "size": 0, "files": 0, "newest_mtime": 0.0,
+        "size": 0, "apparent_size": 0, "files": 0, "newest_mtime": 0.0,
         "checkouts": [], "protected_hits": [], "errors": [],
     }
+    # A budget is about blocks on the disk, not about logical file lengths.
+    # `git clone` from a local path hardlinks .git/objects, and a directory
+    # full of local clones reads as more than twice its real size when those
+    # links are counted once per name -- exactly the error that would make a
+    # reclaim estimate optimistic. Count allocated blocks, and count a
+    # multiply-linked inode once per candidate, the way du does.
+    seen_inodes = set()
+
+    def measure(info):
+        if info.st_nlink > 1:
+            key = (info.st_dev, info.st_ino)
+            if key in seen_inodes:
+                return
+            seen_inodes.add(key)
+        stats["size"] += info.st_blocks * 512
+        stats["apparent_size"] += info.st_size
+
     try:
         top = os.lstat(path)
     except OSError as exc:
         stats["errors"].append("{0}: {1}".format(path, exc.strerror or exc))
         return stats
     stats["newest_mtime"] = top.st_mtime
-    stats["size"] = top.st_size
+    measure(top)
     if not stat.S_ISDIR(top.st_mode):
         stats["files"] = 1
         if os.path.basename(path) in GC_PROTECTED_NAMES:
@@ -556,7 +573,7 @@ def scan_subtree(path):
                 stats["errors"].append(
                     "{0}: {1}".format(entry.path, exc.strerror or exc))
                 continue
-            stats["size"] += info.st_size
+            measure(info)
             stats["files"] += 1
             if info.st_mtime > stats["newest_mtime"]:
                 stats["newest_mtime"] = info.st_mtime
@@ -675,7 +692,8 @@ def gc_scan(options):
         record = {
             "path": path, "root": root, "decision": None, "rule": None,
             "rule_name": None, "reason": None, "protected": None,
-            "size": 0, "size_human": "0B", "age_days": 0.0,
+            "size": 0, "size_human": "0B", "apparent_size": 0,
+            "age_days": 0.0,
             "dir_age_days": 0.0, "files": 0, "checkouts": [],
             "verdict": "unknown", "verdict_reason": "", "evidence": [],
         }
@@ -702,6 +720,7 @@ def gc_scan(options):
         stats = scan_subtree(path)
         record["size"] = stats["size"]
         record["size_human"] = human_size(stats["size"])
+        record["apparent_size"] = stats["apparent_size"]
         record["files"] = stats["files"]
         record["checkouts"] = stats["checkouts"]
         record["age_days"] = max(0.0, (now - stats["newest_mtime"]) / 86400.0)

@@ -276,9 +276,17 @@ scan is indistinguishable from a hang, so `--progress` names each candidate on
 stderr as it is verified. It never touches stdout, so it is safe to combine
 with `--json`.
 
-Sizes are apparent bytes (the sum of `st_size`), and an entry's age is measured
-from the newest mtime anywhere in its subtree, which is the conservative
-choice: anything recently touched looks young and is spared.
+A budget is about blocks on the disk, so sizes are allocated bytes
+(`st_blocks * 512`) and a multiply-linked inode is counted once per candidate,
+the way `du` does. This matters more than it sounds: `git clone` from a local
+path hardlinks `.git/objects`, and a dump directory full of local clones reads
+as more than twice its real size if those links are counted once per name,
+which would make every reclaim estimate optimistic. The logical total is kept
+alongside it as `apparent_size` in the JSON receipt.
+
+An entry's age is measured from the newest mtime anywhere in its subtree, which
+is the conservative choice: anything recently touched looks young and is
+spared.
 
 ## Escape hatch
 
