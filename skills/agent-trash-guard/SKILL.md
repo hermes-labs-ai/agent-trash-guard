@@ -68,10 +68,34 @@ directories. It exits 0 only when every item was restored.
   entry that still holds a `.displaced` file stays, and restoring it again
   exits 1 with `missing from trash` for the items already restored.
 
+## Reclaim space
+
+```bash
+agent-trash gc --roots '<dir>[,<dir>...]' --budget 5G --older-than 14
+```
+
+Reports what accumulated storage could be reclaimed and, for everything it
+refuses, why. It is a dry run unless `--collect` is passed. Decisions follow one
+ordered ladder, first match wins: 1 protected denylist, 2 git state unknown,
+3 reachable, 4 newer than the age floor, 5 over budget (collect oldest first),
+6 keep. Rule 5 is the only rule that collects, so without `--budget` nothing is
+collected at all.
+
+A git checkout is collectable only when its tree is clean, its stash list is
+empty, it has no unpushed commits, and `git ls-remote` confirms every local head
+on a real remote. If any git call fails the verdict is UNKNOWN and the path is
+kept — never report an UNKNOWN as clean. `~/.claude`, `~/ai-infra`,
+`~/github-projects`, and anything naming or holding `profiles.db` or
+`corpus.db` can never be collected.
+
+Run `gc` in report mode and show the user the receipt. Pass `--collect` only
+when they explicitly approve that specific reclaim. Use `--json` when you need
+to reason about the result rather than display it.
+
 ## Boundaries
 
-- `agent-trash empty --older-than <days> --yes` is the only permanent delete.
-  Run it only when the user explicitly asks to purge trash.
+- `agent-trash empty --older-than <days> --yes` and `agent-trash gc --collect`
+  are the only permanent deletes. Run either only when the user explicitly asks.
 - `TRASH_GUARD_ALLOW=1` bypasses the guard. Use it only after the user
   explicitly approves a specific permanent delete; never add it to get past a
   block on your own.

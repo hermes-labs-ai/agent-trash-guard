@@ -872,6 +872,233 @@ check "explicit empty --base overrides a set variable" "ERROR" \
 printf '%s' "$RAIL_OUT" | grep -Fq -- "--base is set but empty"
 check "explicit empty --base names the flag" 0 "$?"
 
+# --- gc: reachability is the safety gate, budget is the trigger ---
+# Fixtures are local-only: every "remote" is a bare repository on disk, so
+# `git ls-remote` is exercised for real without touching the network.
+GC_WORK="$WORK/gc"
+GC_ORIGINS="$GC_WORK/origins"
+GC_REPOS="$GC_WORK/repos"
+GC_BUDGET="$GC_WORK/budget"
+GC_DENY="$GC_WORK/deny"
+mkdir -p "$GC_ORIGINS" "$GC_REPOS" "$GC_BUDGET" "$GC_DENY"
+
+gc_git() {
+  local repo="$1"
+  shift
+  git -C "$repo" -c user.name="Trash Guard Tests" -c user.email="tests@example.invalid" \
+    -c commit.gpgsign=false -c protocol.file.allow=always "$@" >/dev/null 2>&1
+}
+
+# A repository that is clean, pushed, and whose remote really advertises the
+# branch head. This is the only shape the collector is allowed to reclaim.
+gc_make_repo() {
+  local name="$1"
+  git init -q --bare "$GC_ORIGINS/$name.git" >/dev/null 2>&1
+  git init -q -b main "$GC_REPOS/$name" >/dev/null 2>&1
+  printf '%s\n' "$name" > "$GC_REPOS/$name/file.txt"
+  gc_git "$GC_REPOS/$name" add file.txt
+  gc_git "$GC_REPOS/$name" commit -m "initial"
+  gc_git "$GC_REPOS/$name" remote add origin "$GC_ORIGINS/$name.git"
+  gc_git "$GC_REPOS/$name" push -u origin main
+}
+
+gc_make_repo clean
+gc_make_repo dirty
+printf '%s\n' "not committed" > "$GC_REPOS/dirty/untracked.txt"
+gc_make_repo unpushed
+printf '%s\n' "second" > "$GC_REPOS/unpushed/file.txt"
+gc_git "$GC_REPOS/unpushed" commit -am "unpushed work"
+gc_make_repo stashed
+printf '%s\n' "work in progress, parked in a stash" > "$GC_REPOS/stashed/file.txt"
+gc_git "$GC_REPOS/stashed" stash push -m "trash-guard-gc-fixture"
+# An orphaned worktree: .git points at a gitdir that no longer exists, so every
+# git call fails. A failing git call must never read as "clean".
+mkdir -p "$GC_REPOS/broken"
+printf 'gitdir: %s\n' "$GC_WORK/gone/.git/worktrees/broken" > "$GC_REPOS/broken/.git"
+printf '%s\n' "orphaned" > "$GC_REPOS/broken/file.txt"
+# Clean and pushed like `clean`, but explicitly denylisted.
+gc_make_repo guarded
+# Pushed, then the remote moved on. The local head is no longer any advertised
+# ref, so an exact sha comparison would call this unpushed; it is not, and
+# confirming that is the whole reason the check is a rev-list and not a
+# string match.
+gc_make_repo behind
+git clone -q "$GC_ORIGINS/behind.git" "$GC_WORK/behind-peer" >/dev/null 2>&1
+printf '%s\n' "moved on" > "$GC_WORK/behind-peer/file.txt"
+gc_git "$GC_WORK/behind-peer" commit -am "remote moves ahead"
+gc_git "$GC_WORK/behind-peer" push origin main
+gc_git "$GC_REPOS/behind" fetch origin
+
+# Non-git accumulation with controlled sizes and ages for the budget ladder.
+python3 - "$GC_BUDGET" "$GC_DENY" <<'PY'
+import os
+import sys
+import time
+
+budget_root, deny_root = sys.argv[1], sys.argv[2]
+now = time.time()
+for name, age_days in (("old-30d", 30), ("old-20d", 20), ("old-10d", 10)):
+    path = os.path.join(budget_root, name)
+    os.makedirs(path, exist_ok=True)
+    with open(os.path.join(path, "blob.bin"), "wb") as handle:
+        handle.write(b"\0" * (1024 * 1024))
+    stamp = now - age_days * 86400
+    os.utime(os.path.join(path, "blob.bin"), (stamp, stamp))
+    os.utime(path, (stamp, stamp))
+
+# Hard invariants: a file literally named profiles.db, and a directory that
+# merely contains corpus.db. Both are old, unreachable and over budget.
+stamp = now - 400 * 86400
+target = os.path.join(deny_root, "profiles.db")
+with open(target, "wb") as handle:
+    handle.write(b"\0" * 4096)
+os.utime(target, (stamp, stamp))
+holder = os.path.join(deny_root, "some-archive")
+os.makedirs(holder, exist_ok=True)
+with open(os.path.join(holder, "corpus.db"), "wb") as handle:
+    handle.write(b"\0" * 4096)
+os.utime(os.path.join(holder, "corpus.db"), (stamp, stamp))
+os.utime(holder, (stamp, stamp))
+PY
+
+gc_run() {
+  python3 "$CLI" gc --json "$@" > "$WORK/gc.json" 2>"$WORK/gc.err"
+}
+
+gc_query() {
+  python3 - "$WORK/gc.json" "$@" <<'PY'
+import json
+import sys
+
+report = json.load(open(sys.argv[1]))
+mode = sys.argv[2]
+if mode == "count":
+    print(sum(1 for e in report["entries"] if e["decision"] == sys.argv[3]))
+elif mode == "total":
+    print(report["totals"][sys.argv[3]])
+else:
+    needle = "/" + sys.argv[3]
+    for entry in report["entries"]:
+        if entry["path"].endswith(needle):
+            if mode == "evidence":
+                print(len(entry["evidence"]))
+            else:
+                print(entry[mode])
+            break
+    else:
+        print("missing")
+PY
+}
+
+# 1. Reachability gate, with the age floor and the budget both wide open, so
+#    the only thing separating these repositories is what git says about them.
+gc_run --roots "$GC_REPOS" --older-than 0 --budget 0 --protect "$GC_REPOS/guarded"
+check "gc exits 0" 0 "$?"
+check "clean pushed repo is collectable" "collect" "$(gc_query decision clean)"
+check "clean pushed repo is unreachable" "unreachable" "$(gc_query verdict clean)"
+check "clean pushed repo is decided by the budget rule" 5 "$(gc_query rule clean)"
+check "a head the remote has moved past is still collectable" "collect" \
+  "$(gc_query decision behind)"
+check "a head the remote has moved past is unreachable" "unreachable" \
+  "$(gc_query verdict behind)"
+check "dirty repo is kept" "keep" "$(gc_query decision dirty)"
+check "dirty repo is reachable" "reachable" "$(gc_query verdict dirty)"
+check "dirty repo is decided by rule 3" 3 "$(gc_query rule dirty)"
+check "unpushed repo is kept" "keep" "$(gc_query decision unpushed)"
+check "unpushed repo is reachable" "reachable" "$(gc_query verdict unpushed)"
+check "stashed repo is kept" "keep" "$(gc_query decision stashed)"
+check "stashed repo is reachable" "reachable" "$(gc_query verdict stashed)"
+# The dangerous false negative: git failing must produce UNKNOWN, not dirty=0.
+check "repo whose git errors is kept" "keep" "$(gc_query decision broken)"
+check "repo whose git errors is unknown, not clean" "unknown" \
+  "$(gc_query verdict broken)"
+check "unknown git state is decided by rule 2" 2 "$(gc_query rule broken)"
+check "unknown git state records its evidence" 0 \
+  "$(nonempty_exit "$(gc_query evidence broken)")"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/broken")][0]; sys.exit(0 if any(i["result"]=="unknown" for i in e["evidence"]) else 1)' "$WORK/gc.json"
+check "unknown evidence names the failing git call" 0 "$?"
+# Rule 1 outranks rule 5: denylisted, yet clean, old and over budget.
+check "denylisted repo is kept" "keep" "$(gc_query decision guarded)"
+check "denylisted repo is decided by rule 1, not rule 5" 1 \
+  "$(gc_query rule guarded)"
+
+# 2. --dry-run is the default: a reporting run mutates nothing.
+check "dry run left the collectable repo in place" 0 \
+  "$(exists_exit "$GC_REPOS/clean")"
+check "dry run left the dirty repo in place" 0 "$(exists_exit "$GC_REPOS/dirty")"
+check "dry run reports itself as a dry run" "True" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["dry_run"])' "$WORK/gc.json")"
+check "dry run reclaimed nothing" 0 "$(gc_query total reclaimed_bytes)"
+
+# 3. The built-in denylist needs no configuration at all.
+gc_run --roots "$GC_DENY" --older-than 0 --budget 0
+check "profiles.db is never collected" "keep" "$(gc_query decision profiles.db)"
+check "profiles.db is decided by rule 1" 1 "$(gc_query rule profiles.db)"
+check "a subtree holding corpus.db is never collected" "keep" \
+  "$(gc_query decision some-archive)"
+check "corpus.db holder is decided by rule 1" 1 "$(gc_query rule some-archive)"
+
+# 4. Budget is the trigger, and it stops as soon as the footprint fits.
+gc_run --roots "$GC_BUDGET" --older-than 1 --budget 2500K
+check "budget collects only what it must" 1 "$(gc_query count collect)"
+check "budget collects the oldest first" "collect" "$(gc_query decision old-30d)"
+check "budget leaves the next-oldest alone" "keep" "$(gc_query decision old-20d)"
+check "candidate spared by a satisfied budget cites rule 5" 5 \
+  "$(gc_query rule old-20d)"
+gc_run --roots "$GC_BUDGET" --older-than 1 --budget 0
+check "a zero budget collects every eligible candidate" 3 \
+  "$(gc_query count collect)"
+# Without a budget nothing triggers collection at all.
+gc_run --roots "$GC_BUDGET" --older-than 1
+check "no budget means no collection" 0 "$(gc_query count collect)"
+check "no budget falls through to rule 6" 6 "$(gc_query rule old-30d)"
+
+# 5. The age floor is a floor: budget pressure does not lower it.
+gc_run --roots "$GC_BUDGET" --older-than 15 --budget 0
+check "age floor keeps the young candidate" "keep" "$(gc_query decision old-10d)"
+check "age floor is rule 4" 4 "$(gc_query rule old-10d)"
+check "age floor still allows the old candidates" 2 "$(gc_query count collect)"
+
+# 6. Flags that must refuse rather than guess.
+python3 "$CLI" gc --roots "$GC_BUDGET" --dry-run --collect >/dev/null 2>&1
+check "--dry-run with --collect is refused" 1 "$?"
+python3 "$CLI" gc --roots "$HOME" >/dev/null 2>&1
+check "the home directory is refused as a root" 1 "$?"
+python3 "$CLI" gc --roots / >/dev/null 2>&1
+check "the filesystem root is refused as a root" 1 "$?"
+python3 "$CLI" gc --roots "$GC_BUDGET" --budget nonsense >/dev/null 2>&1
+check "an unparseable budget is refused" 2 "$?"
+
+# 6b. --progress goes to stderr, so it can never corrupt the JSON receipt.
+gc_run --roots "$GC_BUDGET" --older-than 1 --budget 0 --progress
+check "progress reports every candidate on stderr" 3 \
+  "$(grep -c '^\[[0-9]*/3\] ' "$WORK/gc.err")"
+check "progress leaves the JSON receipt parseable" 3 "$(gc_query count collect)"
+
+# 7. --offline refuses to trust a remote it cannot reach, so the checkout it
+#    cannot confirm stays UNKNOWN and is kept.
+gc_git "$GC_REPOS/clean" remote set-url origin "https://example.invalid/clean.git"
+gc_run --roots "$GC_REPOS" --older-than 0 --budget 0 --offline
+check "offline mode cannot confirm a network remote" "unknown" \
+  "$(gc_query verdict clean)"
+check "an unconfirmable remote is kept" "keep" "$(gc_query decision clean)"
+gc_git "$GC_REPOS/clean" remote set-url origin "$GC_ORIGINS/clean.git"
+
+# 8. --collect actually reclaims, and only what the ladder chose.
+gc_run --roots "$GC_REPOS" --older-than 0 --budget 0 --collect \
+  --protect "$GC_REPOS/guarded" --receipt "$WORK/gc-receipt.jsonl"
+check "collect exits 0" 0 "$?"
+check "collect removed the clean pushed repo" 1 "$(exists_exit "$GC_REPOS/clean")"
+check "collect spared the dirty repo" 0 "$(exists_exit "$GC_REPOS/dirty")"
+check "collect spared the unpushed repo" 0 "$(exists_exit "$GC_REPOS/unpushed")"
+check "collect spared the stashed repo" 0 "$(exists_exit "$GC_REPOS/stashed")"
+check "collect spared the repo whose git errors" 0 \
+  "$(exists_exit "$GC_REPOS/broken")"
+check "collect spared the denylisted repo" 0 "$(exists_exit "$GC_REPOS/guarded")"
+check "collect wrote an audit receipt" 0 "$(exists_exit "$WORK/gc-receipt.jsonl")"
+python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[0]); sys.exit(0 if all(e["rule"] and e["reason"] and e["path"] for e in r["entries"]) else 1)' "$WORK/gc-receipt.jsonl"
+check "every receipt entry names a rule, a reason and a path" 0 "$?"
+
 echo
 echo "$PASS passed, $FAIL failed"
 rm -rf "$WORK"
