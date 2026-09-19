@@ -266,6 +266,11 @@ report mode, read a few days of receipts, then add `--collect`:
 0 3 * * *  agent-trash gc --roots ~/.claude-trash,~/worktrees --budget 5G --older-than 14 --receipt ~/.claude-trash/gc-receipts.jsonl
 ```
 
+Verifying a large accumulation site is minutes of git calls, and a silent
+scan is indistinguishable from a hang, so `--progress` names each candidate on
+stderr as it is verified. It never touches stdout, so it is safe to combine
+with `--json`.
+
 Sizes are apparent bytes (the sum of `st_size`), and an entry's age is measured
 from the newest mtime anywhere in its subtree, which is the conservative
 choice: anything recently touched looks young and is spared.

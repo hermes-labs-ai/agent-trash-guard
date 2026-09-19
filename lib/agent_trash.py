@@ -657,120 +657,130 @@ def gc_scan(options):
     remote_cache = {}
     records = []
     errors = []
+    queue = []
     for root in options["roots"]:
         if not os.path.isdir(root):
             errors.append("root is not a directory: {0}".format(root))
             continue
         for path in gc_candidates(root, options["depth"]):
-            record = {
-                "path": path, "root": root, "decision": None, "rule": None,
-                "rule_name": None, "reason": None, "protected": None,
-                "size": 0, "size_human": "0B", "age_days": 0.0,
-                "dir_age_days": 0.0, "files": 0, "checkouts": [],
-                "verdict": "unknown", "verdict_reason": "", "evidence": [],
-            }
-            if os.path.islink(path):
-                record["protected"] = None
-                record["verdict"] = "reachable"
-                record["verdict_reason"] = "symlink: not followed, not collected"
-                record["evidence"] = [{
-                    "check": "symlink", "command": "os.path.islink",
-                    "exit_code": None, "result": "reachable",
-                    "detail": "candidate is a symlink",
-                }]
-                records.append(record)
-                continue
-            early = protected_match(path, options["protected"], None)
-            if early:
-                record["protected"] = early
-                record["evidence"] = [{
-                    "check": "denylist", "command": "protected_match",
-                    "exit_code": None, "result": "protected", "detail": early,
-                }]
-                records.append(record)
-                continue
-            stats = scan_subtree(path)
-            record["size"] = stats["size"]
-            record["size_human"] = human_size(stats["size"])
-            record["files"] = stats["files"]
-            record["checkouts"] = stats["checkouts"]
-            record["age_days"] = max(0.0, (now - stats["newest_mtime"]) / 86400.0)
-            try:
-                record["dir_age_days"] = max(
-                    0.0, (now - os.path.getmtime(path)) / 86400.0)
-            except OSError:
-                record["dir_age_days"] = record["age_days"]
-            hit = protected_match(path, options["protected"], stats)
-            if hit:
-                record["protected"] = hit
-                record["evidence"] = [{
-                    "check": "denylist", "command": "protected_match",
-                    "exit_code": None, "result": "protected", "detail": hit,
-                }]
-                records.append(record)
-                continue
-            if stats["errors"]:
-                record["verdict"] = "unknown"
-                record["verdict_reason"] = (
-                    "{0} path(s) could not be read, first: {1}".format(
-                        len(stats["errors"]), stats["errors"][0]))
-                record["evidence"] = [{
-                    "check": "scan", "command": "os.scandir", "exit_code": None,
-                    "result": "unknown", "detail": detail,
-                } for detail in stats["errors"][:5]]
-                records.append(record)
-                continue
-            if not stats["checkouts"]:
-                record["verdict"] = "unreachable"
-                record["verdict_reason"] = (
-                    "no git checkout in subtree: age and budget only")
-                record["evidence"] = [{
-                    "check": "git-checkouts", "command": "scan for .git",
-                    "exit_code": None, "result": "unreachable",
-                    "detail": "0 git checkouts in {0} file(s)".format(
-                        stats["files"]),
-                }]
-                records.append(record)
-                continue
-            if len(stats["checkouts"]) > options["max_checkouts"]:
-                record["verdict"] = "unknown"
-                record["verdict_reason"] = (
-                    "{0} git checkouts exceeds --max-checkouts {1}".format(
-                        len(stats["checkouts"]), options["max_checkouts"]))
-                record["evidence"] = [{
-                    "check": "git-checkouts", "command": "scan for .git",
-                    "exit_code": None, "result": "unknown",
-                    "detail": record["verdict_reason"],
-                }]
-                records.append(record)
-                continue
-            verdicts = []
-            for repo in stats["checkouts"]:
-                verdict, evidence = checkout_reachability(
-                    repo, options, remote_cache)
-                verdicts.append(verdict)
-                for item in evidence:
-                    item = dict(item)
-                    item["repo"] = repo
-                    record["evidence"].append(item)
-                if verdict == "unknown":
-                    break
-            if "unknown" in verdicts:
-                record["verdict"] = "unknown"
-                record["verdict_reason"] = (
-                    "git could not answer for {0}".format(
-                        stats["checkouts"][len(verdicts) - 1]))
-            elif "reachable" in verdicts:
-                record["verdict"] = "reachable"
-                reached = stats["checkouts"][verdicts.index("reachable")]
-                record["verdict_reason"] = (
-                    "still reachable: {0}".format(reached))
-            else:
-                record["verdict"] = "unreachable"
-                record["verdict_reason"] = (
-                    "{0} checkout(s) clean, pushed and confirmed on a "
-                    "remote".format(len(stats["checkouts"])))
+            queue.append((root, path))
+    # Verifying a large accumulation site is minutes of git calls. A scan that
+    # says nothing for that long is indistinguishable from a hang.
+    total_candidates = len(queue)
+    for index, (root, path) in enumerate(queue, 1):
+        if options["progress"]:
+            sys.stderr.write("[{0}/{1}] {2}\n".format(
+                index, total_candidates, path))
+            sys.stderr.flush()
+        record = {
+            "path": path, "root": root, "decision": None, "rule": None,
+            "rule_name": None, "reason": None, "protected": None,
+            "size": 0, "size_human": "0B", "age_days": 0.0,
+            "dir_age_days": 0.0, "files": 0, "checkouts": [],
+            "verdict": "unknown", "verdict_reason": "", "evidence": [],
+        }
+        if os.path.islink(path):
+            record["protected"] = None
+            record["verdict"] = "reachable"
+            record["verdict_reason"] = "symlink: not followed, not collected"
+            record["evidence"] = [{
+                "check": "symlink", "command": "os.path.islink",
+                "exit_code": None, "result": "reachable",
+                "detail": "candidate is a symlink",
+            }]
             records.append(record)
+            continue
+        early = protected_match(path, options["protected"], None)
+        if early:
+            record["protected"] = early
+            record["evidence"] = [{
+                "check": "denylist", "command": "protected_match",
+                "exit_code": None, "result": "protected", "detail": early,
+            }]
+            records.append(record)
+            continue
+        stats = scan_subtree(path)
+        record["size"] = stats["size"]
+        record["size_human"] = human_size(stats["size"])
+        record["files"] = stats["files"]
+        record["checkouts"] = stats["checkouts"]
+        record["age_days"] = max(0.0, (now - stats["newest_mtime"]) / 86400.0)
+        try:
+            record["dir_age_days"] = max(
+                0.0, (now - os.path.getmtime(path)) / 86400.0)
+        except OSError:
+            record["dir_age_days"] = record["age_days"]
+        hit = protected_match(path, options["protected"], stats)
+        if hit:
+            record["protected"] = hit
+            record["evidence"] = [{
+                "check": "denylist", "command": "protected_match",
+                "exit_code": None, "result": "protected", "detail": hit,
+            }]
+            records.append(record)
+            continue
+        if stats["errors"]:
+            record["verdict"] = "unknown"
+            record["verdict_reason"] = (
+                "{0} path(s) could not be read, first: {1}".format(
+                    len(stats["errors"]), stats["errors"][0]))
+            record["evidence"] = [{
+                "check": "scan", "command": "os.scandir", "exit_code": None,
+                "result": "unknown", "detail": detail,
+            } for detail in stats["errors"][:5]]
+            records.append(record)
+            continue
+        if not stats["checkouts"]:
+            record["verdict"] = "unreachable"
+            record["verdict_reason"] = (
+                "no git checkout in subtree: age and budget only")
+            record["evidence"] = [{
+                "check": "git-checkouts", "command": "scan for .git",
+                "exit_code": None, "result": "unreachable",
+                "detail": "0 git checkouts in {0} file(s)".format(
+                    stats["files"]),
+            }]
+            records.append(record)
+            continue
+        if len(stats["checkouts"]) > options["max_checkouts"]:
+            record["verdict"] = "unknown"
+            record["verdict_reason"] = (
+                "{0} git checkouts exceeds --max-checkouts {1}".format(
+                    len(stats["checkouts"]), options["max_checkouts"]))
+            record["evidence"] = [{
+                "check": "git-checkouts", "command": "scan for .git",
+                "exit_code": None, "result": "unknown",
+                "detail": record["verdict_reason"],
+            }]
+            records.append(record)
+            continue
+        verdicts = []
+        for repo in stats["checkouts"]:
+            verdict, evidence = checkout_reachability(
+                repo, options, remote_cache)
+            verdicts.append(verdict)
+            for item in evidence:
+                item = dict(item)
+                item["repo"] = repo
+                record["evidence"].append(item)
+            if verdict == "unknown":
+                break
+        if "unknown" in verdicts:
+            record["verdict"] = "unknown"
+            record["verdict_reason"] = (
+                "git could not answer for {0}".format(
+                    stats["checkouts"][len(verdicts) - 1]))
+        elif "reachable" in verdicts:
+            record["verdict"] = "reachable"
+            reached = stats["checkouts"][verdicts.index("reachable")]
+            record["verdict_reason"] = (
+                "still reachable: {0}".format(reached))
+        else:
+            record["verdict"] = "unreachable"
+            record["verdict_reason"] = (
+                "{0} checkout(s) clean, pushed and confirmed on a "
+                "remote".format(len(stats["checkouts"])))
+        records.append(record)
 
     total = sum(r["size"] for r in records)
     budget_state = {"budget": options["budget"], "projected": total}
@@ -835,6 +845,7 @@ def cmd_gc(args):
         "offline": args.offline,
         "max_checkouts": args.max_checkouts,
         "max_ancestor_checks": 200,
+        "progress": args.progress,
     }
     records, errors, total = gc_scan(options)
 
@@ -1016,6 +1027,10 @@ def main(argv=None):
                            "UNKNOWN rather than slowly verified (default 50)")
     p_gc.add_argument("--evidence-lines", type=int, default=2, metavar="N",
                       help="evidence lines to print per candidate (default 2)")
+    p_gc.add_argument("--progress", action="store_true",
+                      help="name each candidate on stderr as it is verified; a "
+                           "large root is minutes of git calls, and a silent "
+                           "scan looks like a hang")
     p_gc.set_defaults(func=cmd_gc)
 
     args = parser.parse_args(argv)

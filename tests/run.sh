@@ -1055,6 +1055,12 @@ check "the filesystem root is refused as a root" 1 "$?"
 python3 "$CLI" gc --roots "$GC_BUDGET" --budget nonsense >/dev/null 2>&1
 check "an unparseable budget is refused" 2 "$?"
 
+# 6b. --progress goes to stderr, so it can never corrupt the JSON receipt.
+gc_run --roots "$GC_BUDGET" --older-than 1 --budget 0 --progress
+check "progress reports every candidate on stderr" 3 \
+  "$(grep -c '^\[[0-9]*/3\] ' "$WORK/gc.err")"
+check "progress leaves the JSON receipt parseable" 3 "$(gc_query count collect)"
+
 # 7. --offline refuses to trust a remote it cannot reach, so the checkout it
 #    cannot confirm stays UNKNOWN and is kept.
 gc_git "$GC_REPOS/clean" remote set-url origin "https://example.invalid/clean.git"
