@@ -918,6 +918,16 @@ printf 'gitdir: %s\n' "$GC_WORK/gone/.git/worktrees/broken" > "$GC_REPOS/broken/
 printf '%s\n' "orphaned" > "$GC_REPOS/broken/file.txt"
 # Clean and pushed like `clean`, but explicitly denylisted.
 gc_make_repo guarded
+# Pushed, then the remote moved on. The local head is no longer any advertised
+# ref, so an exact sha comparison would call this unpushed; it is not, and
+# confirming that is the whole reason the check is a rev-list and not a
+# string match.
+gc_make_repo behind
+git clone -q "$GC_ORIGINS/behind.git" "$GC_WORK/behind-peer" >/dev/null 2>&1
+printf '%s\n' "moved on" > "$GC_WORK/behind-peer/file.txt"
+gc_git "$GC_WORK/behind-peer" commit -am "remote moves ahead"
+gc_git "$GC_WORK/behind-peer" push origin main
+gc_git "$GC_REPOS/behind" fetch origin
 
 # Non-git accumulation with controlled sizes and ages for the budget ladder.
 python3 - "$GC_BUDGET" "$GC_DENY" <<'PY'
@@ -987,6 +997,10 @@ check "gc exits 0" 0 "$?"
 check "clean pushed repo is collectable" "collect" "$(gc_query decision clean)"
 check "clean pushed repo is unreachable" "unreachable" "$(gc_query verdict clean)"
 check "clean pushed repo is decided by the budget rule" 5 "$(gc_query rule clean)"
+check "a head the remote has moved past is still collectable" "collect" \
+  "$(gc_query decision behind)"
+check "a head the remote has moved past is unreachable" "unreachable" \
+  "$(gc_query verdict behind)"
 check "dirty repo is kept" "keep" "$(gc_query decision dirty)"
 check "dirty repo is reachable" "reachable" "$(gc_query verdict dirty)"
 check "dirty repo is decided by rule 3" 3 "$(gc_query rule dirty)"

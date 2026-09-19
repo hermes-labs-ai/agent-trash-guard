@@ -229,6 +229,11 @@ inside it passes *all* of these:
   `git ls-remote` — not by `git branch -r`, which reads a stale local cache and
   will happily claim a branch is on a remote that never received it
 
+The last check is a `git rev-list --count` of the head against everything the
+remote just advertised, not a string comparison of SHAs, so a head the remote
+has already moved past still counts as pushed. Advertised objects the checkout
+does not have are ignored, which can only make the answer more cautious.
+
 If git errors, times out, is missing, or returns something unparseable, the
 verdict is **UNKNOWN**, not clean. A `dirty=0` produced by git falling over is
 the most dangerous false negative a collector can have, so it is never treated

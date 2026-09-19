@@ -310,7 +310,7 @@ def git_binary():
     return os.environ.get("AGENT_TRASH_GIT", "git")
 
 
-def run_git(repo, argv, timeout, allowed=(0,)):
+def run_git(repo, argv, timeout, allowed=(0,), stdin_data=None):
     """Run git, converting every failure mode into GitUnknown.
 
     Returns (exit_code, stdout). Only exit codes in `allowed` come back; any
@@ -324,6 +324,7 @@ def run_git(repo, argv, timeout, allowed=(0,)):
         proc = subprocess.run(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=timeout, env=env,
+            input=None if stdin_data is None else stdin_data.encode("utf-8"),
         )
     except subprocess.TimeoutExpired:
         raise GitUnknown({
@@ -475,37 +476,36 @@ def checkout_reachability(repo, options, remote_cache):
                  "no local branch and no HEAD commit to confirm")
             return "reachable", evidence
 
-        checked = 0
+        # A head is pushed when nothing reachable from it is missing from what
+        # the remote just advertised. One rev-list answers that for a head,
+        # whatever the remote's ref count; --ignore-missing drops advertised
+        # objects this checkout does not have, which only ever makes the
+        # answer more conservative.
+        exclusions = "".join("^{0}\n".format(s) for s in sorted(remote_shas))
         for name, sha in heads:
             if sha in remote_shas:
                 continue
-            found = False
-            for remote_sha in sorted(remote_shas):
-                if checked >= options["max_ancestor_checks"]:
-                    raise GitUnknown({
-                        "check": "ls-remote",
-                        "command": "git merge-base --is-ancestor",
-                        "exit_code": None, "result": "unknown",
-                        "detail": "gave up confirming {0} after {1} ancestry "
-                                  "checks".format(name,
-                                                  options["max_ancestor_checks"]),
-                    })
-                checked += 1
-                code, _ = run_git(
-                    repo, ["merge-base", "--is-ancestor", sha, remote_sha],
-                    timeout, allowed=(0, 1, 128, 129),
-                )
-                if code == 0:
-                    found = True
-                    break
-            if not found:
-                note("branches", "git ls-remote + git merge-base --is-ancestor",
-                     0, "reachable",
-                     "branch {0} ({1}) is on no real remote".format(
-                         name, sha[:12]))
+            code, out = run_git(
+                repo, ["rev-list", "--count", "--ignore-missing", "--stdin"],
+                timeout, stdin_data="{0}\n{1}".format(sha, exclusions),
+            )
+            try:
+                ahead = int(out.strip() or "0")
+            except ValueError:
+                raise GitUnknown({
+                    "check": "rev-list",
+                    "command": "git rev-list --count --ignore-missing --stdin",
+                    "exit_code": code, "result": "unknown",
+                    "detail": "unparseable commit count: {0!r}".format(
+                        out.strip()[:100]),
+                })
+            if ahead:
+                note("branches", "git ls-remote + git rev-list --count", 0,
+                     "reachable",
+                     "branch {0} ({1}) has {2} commit(s) on no real "
+                     "remote".format(name, sha[:12], ahead))
                 return "reachable", evidence
-        note("branches", "git ls-remote + git merge-base --is-ancestor", 0,
-             "clean",
+        note("branches", "git ls-remote + git rev-list --count", 0, "clean",
              "all {0} local head(s) confirmed present on a real remote".format(
                  len(heads)))
     except GitUnknown as exc:
@@ -844,7 +844,6 @@ def cmd_gc(args):
         "git_timeout": args.git_timeout,
         "offline": args.offline,
         "max_checkouts": args.max_checkouts,
-        "max_ancestor_checks": 200,
         "progress": args.progress,
     }
     records, errors, total = gc_scan(options)
