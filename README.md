@@ -8,7 +8,9 @@ files get moved to a recoverable trash directory instead.
 Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 `rm` has no undo. This project provides native pre-tool adapters for Claude
 Code, Codex, and Gemini CLI, backed by one detector and the `agent-trash` CLI.
-Every guarded "delete" becomes a move you can inspect and reverse.
+Every guarded "delete" becomes a move you can inspect and reverse, and
+`agent-trash gc` reclaims the space those moves accumulate without ever
+reclaiming work that git cannot prove is safe to lose.
 
 The project was originally published as `claude-trash-guard`. GitHub redirects
 that historical repository URL, and `claude-trash` remains as a compatibility
@@ -174,6 +176,100 @@ in the trash entry, so even `--force` loses nothing).
 Set `AGENT_TRASH_DIR` to relocate the trash (default: `~/.claude-trash`). The
 legacy `CLAUDE_TRASH_DIR` variable remains supported.
 
+## Retention: `agent-trash gc`
+
+A recoverable delete only moves the problem: guarded deletes, dated task
+worktrees, and approved-for-deletion dumps pile up until the disk is full of
+quarantined garbage. `agent-trash gc` reaps that accumulation, and it is built
+so that it can only ever reap work that nothing still points at.
+
+**Budget decides *when* to collect. Reachability decides *what* may be
+collected.** The size budget is the trigger, the way BuildKit's `keepStorage`
+or ccache's `max_size` are; reachability is the Nix GC-root model, so anything
+still reachable from something that matters is never a candidate.
+
+```bash
+# report only (the default): what would gc reclaim, and why did it refuse the rest
+agent-trash gc --roots ~/.claude-trash,~/worktrees --budget 5G --older-than 14
+
+# the full machine-readable receipt, one JSON object with an entry per decision
+agent-trash gc --roots ~/.claude-trash --budget 5G --json
+
+# actually reclaim; deleting always needs this explicit flag
+agent-trash gc --roots ~/.claude-trash --budget 5G --older-than 14 --collect
+```
+
+### The decision ladder
+
+Every candidate runs the same ordered ladder, first match wins, and every
+receipt names the rule number that decided it:
+
+| # | Rule | Outcome |
+|---|------|---------|
+| 1 | **Protected** — the denylist | never collect, overrides everything below |
+| 2 | **Unknown** — git could not answer | never collect; unknown is treated as reachable |
+| 3 | **Reachable** — something still points at it | never collect |
+| 4 | **Too young** — newer than `--older-than` | never collect; budget pressure does not lower the floor |
+| 5 | **Budget** — footprint exceeds `--budget` | collect, oldest first, until the footprint fits |
+| 6 | **Default** | keep |
+
+Rule 5 is the only rule that ever collects anything. Without `--budget`,
+nothing triggers collection at all; `--budget 0` means "collect everything the
+first four rules allow".
+
+### What "unreachable" means
+
+A directory holding git checkouts is unreachable only when *every* checkout
+inside it passes *all* of these:
+
+- `git status --porcelain --untracked-files=all` is empty
+- `git stash list` is empty
+- `git log --branches --not --remotes --oneline` is empty
+- every local branch head, and `HEAD`, is confirmed present on a real remote by
+  `git ls-remote` — not by `git branch -r`, which reads a stale local cache and
+  will happily claim a branch is on a remote that never received it
+
+If git errors, times out, is missing, or returns something unparseable, the
+verdict is **UNKNOWN**, not clean. A `dirty=0` produced by git falling over is
+the most dangerous false negative a collector can have, so it is never treated
+as a pass. The same applies to a subtree whose files could not all be read, and
+to a candidate holding more than `--max-checkouts` repositories. `--offline`
+extends this: a remote that is not a local path cannot be contacted, so its
+checkout is UNKNOWN and kept.
+
+A path with no git checkout in it falls back to age and budget only.
+
+### The denylist
+
+`~/.claude`, `~/ai-infra`, `~/github-projects`, and any path that names or
+contains `profiles.db` or `corpus.db` can never be collected. These are
+built in and cannot be switched off; `--protect PATH` and `AGENT_TRASH_PROTECT`
+only add to them. Rule 1 is re-checked at the moment of deletion, not just
+during planning. `/` and `$HOME` are refused as scan roots outright: name the
+accumulation directories explicitly.
+
+### Receipts
+
+Every decision produces a receipt line carrying the path, apparent size, age,
+reachability verdict, the evidence that produced that verdict (the git command,
+its exit code, and what it said), the rule number, and collect or keep.
+`--json` prints the whole run as one object; `--receipt PATH` appends it to a
+JSONL audit log.
+
+### Automating it
+
+`gc` is a single deterministic command with no network calls of its own beyond
+`git ls-remote`, so a cron entry or a launchd agent is enough. Start it in
+report mode, read a few days of receipts, then add `--collect`:
+
+```
+0 3 * * *  agent-trash gc --roots ~/.claude-trash,~/worktrees --budget 5G --older-than 14 --receipt ~/.claude-trash/gc-receipts.jsonl
+```
+
+Sizes are apparent bytes (the sum of `st_size`), and an entry's age is measured
+from the newest mtime anywhere in its subtree, which is the conservative
+choice: anything recently touched looks young and is spared.
+
 ## Escape hatch
 
 For a genuine permanent delete that you have explicitly approved, prefix the
@@ -227,7 +323,14 @@ python3 tools/build_platform_bundles.py --check
 ```
 
 Covers the hook's block/allow matrix, the full put/list/restore/empty
-lifecycle, and the quality rail's review range, in an isolated temp directory.
+lifecycle, the `gc` decision ladder, and the quality rail's review range, in an
+isolated temp directory.
+
+The `gc` fixtures build real git repositories whose remotes are bare
+repositories on the same disk, so `git ls-remote` is exercised for real and the
+suite still needs no network. They pin the cases that matter: a clean pushed
+repository is collectable, while a dirty tree, a stash, an unpushed commit, an
+orphaned worktree whose git calls all fail, and a denylisted path are not.
 
 The Hermes Gate rail in `.hermes/` keeps its local scope — worktree, index and
 untracked bytes — when run with no arguments. A hosted checkout has none of
