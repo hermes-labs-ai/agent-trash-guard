@@ -7,8 +7,9 @@ files get moved to a recoverable trash directory instead.
 
 Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 `rm` has no undo. This project provides native pre-tool adapters for Claude
-Code, Codex, and Gemini CLI, backed by one detector and the `agent-trash` CLI.
-Every guarded "delete" becomes a move you can inspect and reverse, and
+Code, Codex, Gemini CLI, and OpenClaw, backed by one detector and the `agent-trash` CLI.
+Recognized guarded delete commands are blocked before execution; use
+`agent-trash put` to make the recoverable move you can inspect and reverse.
 `agent-trash gc` reclaims the space those moves accumulate without ever
 reclaiming work that git cannot prove is safe to lose.
 
@@ -31,6 +32,7 @@ one native command:
 | Claude Code | `claude plugin marketplace add hermes-labs-ai/agent-trash-guard && claude plugin install agent-trash-guard@hermes-labs` | `claude plugin list` |
 | Codex CLI | `codex plugin marketplace add hermes-labs-ai/agent-trash-guard && codex plugin add agent-trash-guard@hermes-labs` | `codex plugin list`, then trust the hook with `/hooks` |
 | Gemini CLI | `gemini extensions install https://github.com/hermes-labs-ai/agent-trash-guard --ref main` | `gemini skills list` |
+| OpenClaw | `openclaw plugins install ./integrations/openclaw` | `openclaw plugins inspect agent-trash-guard --json` |
 | skills.sh (skill only) | `npx skills add https://github.com/hermes-labs-ai/agent-trash-guard --skill agent-trash-guard` | `npx skills list` |
 
 The skill teaches an agent to use `agent-trash put`, `list`, and `restore`
@@ -56,9 +58,44 @@ review before treating delete interception as active. Until then, Codex loads
 the skill but skips its non-managed hook.
 
 The guard is a convenience layer, not universal deletion protection: it fails
-open when it cannot parse a hook event, has documented command-pattern limits,
-and its local trash is not a backup. Keep normal backups and inspect the
+open when it cannot parse a Claude/Codex/Gemini hook event. The OpenClaw
+bridge instead fails closed when it cannot verify an `exec` command. All hosts
+have documented command-pattern limits, and the local trash is not a backup.
+Keep normal backups and inspect the
 supported-command boundaries below before relying on it for an important path.
+
+### OpenClaw: recover one file end to end
+
+The OpenClaw adapter intercepts the native `exec` tool. It blocks a recognized
+permanent-delete command; it does **not** rewrite that command into a trash
+operation. After the block, run the recoverable CLI yourself (or instruct the
+agent to run it):
+
+```bash
+# From this repository checkout, install the adapter and restart the gateway.
+openclaw plugins install -l ./integrations/openclaw
+openclaw plugins inspect agent-trash-guard --json
+
+# In an OpenClaw exec session, this is rejected before rm receives the file.
+rm -f notes.txt
+
+# Use the bundled recoverable CLI instead. (Use `agent-trash` if your host
+# exposes plugin bin directories on PATH.)
+./integrations/openclaw/bin/agent-trash put notes.txt
+./integrations/openclaw/bin/agent-trash list
+# Copy the entry ID printed by `put` (for example, 20260919-153000-4242).
+./integrations/openclaw/bin/agent-trash restore 20260919-153000-4242
+```
+
+Before `put`, `notes.txt` is at its original path. After `put`, it is absent
+there and `list` shows the entry ID and original path. After `restore ID`, the
+same bytes are back at the original path. `restore` refuses to replace a newer
+file unless `--force` is explicit. The adapter packages that CLI at
+`integrations/openclaw/bin/agent-trash`.
+
+This is an `exec`-tool guard, not an LLM conversation test or a general file
+system monitor. It recognizes the documented shell delete patterns and leaves
+other deletion mechanisms, overwrites, and truncation outside its scope.
 
 ## Claude Code
 
@@ -313,10 +350,10 @@ plugin-cache isolation; do not edit them. Regenerate with
 
 ## Other agents
 
-OpenClaw has a native `before_tool_call` plugin hook capable of blocking an
-`exec` call. It requires a TypeScript provider plugin rather than this
-JSON-over-stdin adapter, so it is not claimed as supported here yet. No local
-Hermes Agent/client installation exposed a verified pre-tool interception API;
+OpenClaw's native `before_tool_call` plugin hook blocks `exec` calls through
+the self-contained adapter in `integrations/openclaw/`. It bridges
+`event.params.command` to the canonical detector and fails closed if that
+bridge cannot complete. No local Hermes Agent/client installation exposed a verified pre-tool interception API;
 the `hermes` command on this machine is the Hermes Labs command center, not an
 agent runtime. Both are adapter candidates, not live integrations.
 

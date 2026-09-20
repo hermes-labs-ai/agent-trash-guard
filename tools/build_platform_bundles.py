@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Create or verify the runtime copies needed by cached agent plugins.
 
-Claude and Codex execute their installed package in isolation, so their adapter
-roots must each contain the hook and CLI runtime. These files are generated
-from the repository root; never edit a copy by hand.
+Claude, Codex, and OpenClaw execute installed packages in isolation, so their
+adapter roots must each contain the hook and CLI runtime. These files are
+generated from the repository root; never edit a copy by hand.
 
 Codex ignores a `.codex-plugin` manifest, and so its hooks, when a portable
 root `plugin.json` exists. The Codex guard therefore stays in its own adapter
@@ -28,6 +28,7 @@ SKILL_FILE = Path("skills/agent-trash-guard/SKILL.md")
 TARGETS = {
     Path("integrations/claude"): RUNTIME_FILES,
     Path("integrations/codex"): RUNTIME_FILES + (SKILL_FILE,),
+    Path("integrations/openclaw"): RUNTIME_FILES,
 }
 
 
