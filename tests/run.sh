@@ -299,7 +299,8 @@ assert groups[0]["hooks"][0]["command"] == "python3 /foreign/trash_guard.py"
 assert groups[0]["hooks"][1]["type"] == "prompt"
 entry = groups[1]
 assert entry["matcher"] == "run_shell_command"
-assert entry["hooks"][0]["command"] == f"python3 {sys.argv[2]}/hooks/trash_guard.py"
+import shlex
+assert shlex.split(entry["hooks"][0]["command"]) == ["python3", f"{sys.argv[2]}/hooks/trash_guard.py"]
 assert entry["hooks"][0]["timeout"] == 8000
 PY
 check "Gemini installer registers native hook" 0 "$?"
