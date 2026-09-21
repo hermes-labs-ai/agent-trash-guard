@@ -1,5 +1,9 @@
 # agent-trash-guard
 
+<p align="center">
+  <img src="assets/agent-trash-guard-artwork.jpg" width="900" alt="Agent Trash Guard artwork: an armored guardian protecting systems from unsafe deletion" />
+</p>
+
 [![CI](https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml)
 
 A safety net for coding-agent sessions: permanent deletes get blocked, and
