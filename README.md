@@ -1,17 +1,32 @@
-# agent-trash-guard
+<div align="center">
 
-<p align="center">
+<h1>Agent Trash Guard</h1>
+
+<p>
   <img src="assets/agent-trash-guard-artwork.jpg" width="900" alt="Agent Trash Guard artwork: an armored guardian protecting systems from unsafe deletion" />
 </p>
 
-[![CI](https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml)
+<p><strong>A safety net for coding-agent sessions: block permanent deletes and keep recovery within reach.</strong></p>
 
-A safety net for coding-agent sessions: permanent deletes get blocked, and
-files get moved to a recoverable trash directory instead.
+<p>Native guards for Claude Code, Codex, Gemini CLI, and OpenClaw, backed by one detector and an inspectable <code>agent-trash</code> workflow.</p>
 
-agent-trash-guard is developed by [Hermes Labs](https://hermes-labs.ai).
+<p>Agent Trash Guard is developed by <a href="https://hermes-labs.ai">Hermes Labs</a>.</p>
 
-Hermes Labs studies failure modes in agent and LLM systems, develops open-source tools that treat language as part of the runtime, and works with teams to remediate reliability failures in production.
+<p>Hermes Labs studies failure modes in agent and LLM systems, develops open-source tools that treat language as part of the runtime, and works with teams to remediate reliability failures in production.</p>
+
+<p>
+<a href="#install">Install</a> ·
+<a href="#what-gets-blocked">What gets blocked</a> ·
+<a href="#using-the-trash">Recovery workflow</a> ·
+<a href="#how-it-works">How it works</a> ·
+<a href="#tests">Tests</a>
+</p>
+
+<a href="https://github.com/hermes-labs-ai/agent-trash-guard/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/hermes-labs-ai/agent-trash-guard?display_name=tag&amp;sort=semver"></a>
+<a href="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg"></a>
+<a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+
+</div>
 
 Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 `rm` has no undo. This project provides native pre-tool adapters for Claude
