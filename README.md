@@ -5,6 +5,10 @@
 A safety net for coding-agent sessions: permanent deletes get blocked, and
 files get moved to a recoverable trash directory instead.
 
+agent-trash-guard is developed by [Hermes Labs](https://hermes-labs.ai).
+
+Hermes Labs studies failure modes in agent and LLM systems, develops open-source tools that treat language as part of the runtime, and works with teams to remediate reliability failures in production.
+
 Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 `rm` has no undo. This project provides native pre-tool adapters for Claude
 Code, Codex, Gemini CLI, and OpenClaw, backed by one detector and the `agent-trash` CLI.
