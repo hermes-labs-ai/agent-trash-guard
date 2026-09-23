@@ -189,8 +189,14 @@ installation route.
 
 ## Cursor
 
-Cursor loads the self-contained bundle at `integrations/cursor/`. Until a
-marketplace listing is available, use Cursor's documented local-plugin path:
+Cursor loads the self-contained bundle at `integrations/cursor/`. To import it
+directly from this public repository, open Customize → Plugins → From GitHub
+Repository, enter `https://github.com/hermes-labs-ai/agent-trash-guard`, and
+install Agent Trash Guard. The root `.cursor-plugin/marketplace.json` points
+Cursor to the native hook bundle. This does not require an official Marketplace
+listing.
+
+For local development, use Cursor's local-plugin path:
 
 ```bash
 git clone https://github.com/hermes-labs-ai/agent-trash-guard.git

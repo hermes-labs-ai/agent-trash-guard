@@ -245,6 +245,13 @@ assert codex_market["plugins"][0]["category"] == "Productivity"
 cursor_root = root / "integrations" / "cursor"
 cursor = json.loads((cursor_root / ".cursor-plugin" / "plugin.json").read_text())
 assert cursor["name"] == "agent-trash-guard"
+cursor_market = json.loads((root / ".cursor-plugin" / "marketplace.json").read_text())
+assert cursor_market["plugins"] == [{
+    "name": cursor["name"],
+    "source": "integrations/cursor",
+    "description": cursor["description"],
+}]
+assert (root / cursor_market["plugins"][0]["source"] / ".cursor-plugin" / "plugin.json").is_file()
 cursor_hooks = json.loads((cursor_root / "hooks" / "hooks.json").read_text())
 assert cursor_hooks["version"] == 1
 cursor_entry = cursor_hooks["hooks"]["beforeShellExecution"][0]

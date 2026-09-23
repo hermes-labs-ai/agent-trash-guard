@@ -1,0 +1,13 @@
+{
+  "name": "agent-trash-guard",
+  "owner": {
+    "name": "Hermes Labs"
+  },
+  "plugins": [
+    {
+      "name": "agent-trash-guard",
+      "source": "integrations/cursor",
+      "description": "Block permanent shell deletes and guide agents to recoverable trash."
+    }
+  ]
+}
