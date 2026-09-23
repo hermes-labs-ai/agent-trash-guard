@@ -103,6 +103,7 @@ check "hook allows git clean -n"    0 "$(hook_exit "$(bash_event 'git clean -n')
 check "hook allows find -exec absolute printf" 0 "$(hook_exit "$(bash_event 'find . -name x -exec /usr/bin/printf "%s\\n" {} \;')")"
 check "hook allows override prefix" 0 "$(hook_exit "$(bash_event 'TRASH_GUARD_ALLOW=1 rm -rf build')")"
 check "hook rejects override before separator" 2 "$(hook_exit "$(bash_event 'TRASH_GUARD_ALLOW=1 ; rm -rf build')")"
+check "hook rejects override with process substitution" 2 "$(hook_exit "$(bash_event 'TRASH_GUARD_ALLOW=1 printf x <(rm -rf build)')")"
 check "hook ignores non-Bash tool"  0 "$(hook_exit '{"tool_name":"Read","tool_input":{"file_path":"/x"}}')"
 check "hook ignores bad json"       0 "$(hook_exit 'not json at all')"
 printf '%s' "$(bash_event 'rm -rf build')" | TRASH_GUARD_ALLOW=1 python3 "$HOOK" 2>/dev/null
@@ -296,6 +297,7 @@ assert run('{"command":"echo TRASH_GUARD_ALLOW=1; rm -rf build"}')["permission"]
 assert run('{"command":"TRASH_GUARD_ALLOW=1 ; rm -rf build"}')["permission"] == "deny"
 assert run('{"command":"TRASH_GUARD_ALLOW=1\\nrm -rf build"}')["permission"] == "deny"
 assert run('{"command":"TRASH_GUARD_ALLOW=1 ls && rm -rf build"}')["permission"] == "deny"
+assert run('{"command":"TRASH_GUARD_ALLOW=1 printf x <(rm -rf build)"}')["permission"] == "deny"
 assert run('{"cwd":"/tmp"}')["permission"] == "deny"
 assert run('not json')["permission"] == "deny"
 assert run_from_workspace('{"command":"shred -u notes.txt"}')["permission"] == "deny"

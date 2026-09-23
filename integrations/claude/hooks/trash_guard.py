@@ -65,7 +65,7 @@ def has_command_override(command):
     if match is None:
         return False
     remainder = command[match.end():]
-    return bool(remainder.strip()) and not any(char in remainder for char in ";&|`$\r\n")
+    return bool(remainder.strip()) and not any(char in remainder for char in ";&|`$<>(){}\\\r\n")
 
 
 def _tokenize(command):
