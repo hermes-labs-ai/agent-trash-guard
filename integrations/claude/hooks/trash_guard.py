@@ -89,7 +89,7 @@ def _is_operator(token):
 def _resolve_head(tokens, start):
     """Walk past wrapper prefixes (bare VAR=val assignments, sudo [-flags]/
     command/nohup/time, env VAR=val..., xargs [-flags]) to the token that is
-    actually executed. Returns its index and optional env split-string source."""
+    actually executed. Returns its index, or -1 for opaque env split-string."""
     i, n = start, len(tokens)
     while i < n:
         tok = tokens[i]
@@ -114,20 +114,10 @@ def _resolve_head(tokens, start):
                     i += 1
                     break
                 if flag in {"-S", "--split-string"} or flag.startswith("--split-string=") or (flag.startswith("-S") and len(flag) > 2):
-                    if flag in {"-S", "--split-string"}:
-                        i += 1
-                        if i >= n or _is_operator(tokens[i]):
-                            return None, None
-                        source = tokens[i]
-                        i += 1
-                    else:
-                        source = flag.split("=", 1)[1] if flag.startswith("--") else flag[2:]
-                        i += 1
-                    parts = [source]
-                    while i < n and not _is_operator(tokens[i]):
-                        parts.append(tokens[i])
-                        i += 1
-                    return None, " ".join(parts)
+                    # env -S has its own escape and expansion language (not
+                    # POSIX shell quoting). Refuse it instead of guessing what
+                    # executable its split string will produce.
+                    return -1
                 if ENV_ASSIGNMENT.match(flag) or flag.startswith("--unset=") or flag.startswith("--chdir=") or flag.startswith("--split-string="):
                     i += 1
                     continue
@@ -152,7 +142,7 @@ def _resolve_head(tokens, start):
                     i += 1
             continue
         break
-    return (i if i < n else None), None
+    return i if i < n else None
 
 
 def _interpreter_code(tokens, head_idx):
@@ -196,11 +186,9 @@ def _eval_code(tokens, head_idx):
 
 
 def _check_candidate(tokens, idx, depth):
-    head_idx, split_code = _resolve_head(tokens, idx)
-    if split_code is not None:
-        if depth >= MAX_UNWRAP_DEPTH:
-            return "max-nesting-depth"
-        return find_violation(split_code, depth + 1)
+    head_idx = _resolve_head(tokens, idx)
+    if head_idx == -1:
+        return "env -S (opaque command)"
     if head_idx is None:
         return None
     head = tokens[head_idx]

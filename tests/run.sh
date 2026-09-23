@@ -88,6 +88,8 @@ check "hook blocks env -i rm"       2 "$(hook_exit "$(bash_event 'env -i rm -rf 
 check "hook blocks env -u rm"       2 "$(hook_exit "$(bash_event 'env -u FOO rm -rf build')")"
 check "hook blocks env -S rm"       2 "$(hook_exit "$(bash_event "env -S 'rm -rf build'")")"
 check "hook blocks env split-string rm" 2 "$(hook_exit "$(bash_event "env --split-string='rm -rf build'")")"
+check "hook blocks env split-string escape" 2 "$(hook_exit "$(bash_event "env -S 'rm\\_-rf build'")")"
+check "hook rejects opaque env split string" 2 "$(hook_exit "$(bash_event "env -S 'echo hi'")")"
 check "hook blocks xargs -n rm"     2 "$(hook_exit "$(bash_event "printf 'target\\n' | xargs -n 1 rm -rf")")"
 check "hook blocks rm after if"     2 "$(hook_exit "$(bash_event 'if rm -rf x; then echo bad; fi')")"
 check "hook blocks rm after while"  2 "$(hook_exit "$(bash_event 'while rm -rf x; do echo bad; done')")"
