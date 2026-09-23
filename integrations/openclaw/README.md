@@ -1,7 +1,7 @@
 # OpenClaw adapter
 
 Install, plugin inspection, and the native `exec`-tool flow were tested with
-OpenClaw 2026.3.24.
+OpenClaw 2026.9.5 (source tag `v2026.9.5`).
 
 This native plugin registers a `before_tool_call` hook for `exec`. It bridges
 `event.params.command` to the bundled canonical detector and returns OpenClaw's
@@ -51,18 +51,29 @@ every deletion mechanism, overwrite, or truncation.
 
 ## Reproduce the native tool-path check
 
-With a local OpenClaw source checkout, this test loads the adapter through
+With an OpenClaw `v2026.9.5` source checkout, this test loads the adapter through
 OpenClaw's real plugin registry, initializes its global hook runner, wraps the
 real `createExecTool`, and executes fixture commands. It makes no model call.
+The adapter package declares OpenClaw as an optional peer so the host can link
+its SDK into the isolated plugin runtime; `openclaw.compat.pluginApi` pins the
+tested compatibility floor.
 
 ```bash
-OPENCLAW_SOURCE_DIR=/path/to/openclaw \
-  /path/to/openclaw/node_modules/.bin/tsx \
+git clone --depth 1 --branch v2026.9.5 https://github.com/openclaw/openclaw.git /tmp/openclaw-v2026.9.5
+cd /tmp/openclaw-v2026.9.5
+pnpm install --frozen-lockfile
+pnpm build
+OPENCLAW_SOURCE_DIR="$PWD" \
+  node_modules/.bin/tsx \
   /path/to/agent-trash-guard/integrations/openclaw/tests/host-exec.integration.ts
 ```
 
 It proves a safe host `exec` runs, direct and nested deletes are blocked while
 fixture bytes remain intact, and `put` → `list` → `restore` through the bundled
 CLI returns the exact original bytes. It uses only a temporary fixture and
-does not start or restart a gateway. Run the command with `/path/to/openclaw`
-as the working directory so its loader can resolve the native plugin SDK.
+does not start or restart a gateway. The test uses a temporary OpenClaw home
+and state directory, leaving the operator's configuration untouched. It also verifies that a `read` tool call
+is outside the `exec` matcher and that disabling this plugin removes its hook
+from the host registry. The test fails unless the checkout is exactly version
+2026.9.5. Run it from the OpenClaw source root so its loader can resolve the
+native plugin SDK.

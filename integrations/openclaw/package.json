@@ -5,5 +5,10 @@
   "type": "module",
   "description": "Blocks permanent-delete exec calls through OpenClaw's native before_tool_call hook.",
   "files": ["index.js", "entry.js", "bridge.js", "openclaw.plugin.json", "hooks/", "bin/", "lib/"],
-  "openclaw": { "extensions": ["./index.js"] }
+  "peerDependencies": { "openclaw": ">=2026.9.5" },
+  "peerDependenciesMeta": { "openclaw": { "optional": true } },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": { "pluginApi": ">=2026.9.5" }
+  }
 }
