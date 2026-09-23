@@ -128,6 +128,16 @@ assert set(portable) <= {
 }
 assert portable["name"] == "agent-trash-guard"
 assert portable["version"] == "0.1.3"
+copilot_hooks = json.loads((root / "com.github.copilot" / "hooks" / "hooks.json").read_text())
+assert copilot_hooks["version"] == 1
+copilot_entry = copilot_hooks["hooks"]["PreToolUse"][0]
+assert copilot_entry == {
+    "type": "command",
+    "matcher": "Bash",
+    "bash": 'python3 "$COPILOT_PLUGIN_ROOT/hooks/trash_guard.py"',
+    "timeoutSec": 8,
+}
+assert (root / "hooks" / "trash_guard.py").is_file()
 skill_text = skill.read_text()
 assert skill_text.startswith("---\nname: agent-trash-guard\ndescription: ")
 assert "not universal deletion protection" in skill_text
