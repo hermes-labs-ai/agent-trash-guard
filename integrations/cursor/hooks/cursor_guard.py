@@ -2,18 +2,9 @@
 """Cursor beforeShellExecution adapter for the canonical trash detector."""
 import json
 import os
-import re
 import sys
 
-from trash_guard import find_violation
-
-
-def has_command_override(command):
-    match = re.match(r"^[ \t]*TRASH_GUARD_ALLOW=1[ \t]+", command)
-    if match is None:
-        return False
-    remainder = command[match.end():]
-    return bool(remainder.strip()) and not any(char in remainder for char in ";&|`$\r\n")
+from trash_guard import find_violation, has_command_override
 
 
 def decide(event):

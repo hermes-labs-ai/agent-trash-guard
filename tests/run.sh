@@ -83,6 +83,10 @@ check "hook blocks bare assignment rm"   2 "$(hook_exit "$(bash_event 'FOO=1 rm 
 check "hook blocks bare assignment bash -c" 2 "$(hook_exit "$(bash_event "FOO=1 bash -c 'rm -rf build'")")"
 check "hook blocks sudo -u rm"      2 "$(hook_exit "$(bash_event 'sudo -u root rm -rf build')")"
 check "hook blocks sudo -n rm"      2 "$(hook_exit "$(bash_event 'sudo -n rm -rf build')")"
+check "hook blocks exec rm"         2 "$(hook_exit "$(bash_event 'exec rm -rf build')")"
+check "hook blocks env -i rm"       2 "$(hook_exit "$(bash_event 'env -i rm -rf build')")"
+check "hook blocks env -u rm"       2 "$(hook_exit "$(bash_event 'env -u FOO rm -rf build')")"
+check "hook blocks xargs -n rm"     2 "$(hook_exit "$(bash_event "printf 'target\\n' | xargs -n 1 rm -rf")")"
 check "hook blocks rm after if"     2 "$(hook_exit "$(bash_event 'if rm -rf x; then echo bad; fi')")"
 check "hook blocks rm after while"  2 "$(hook_exit "$(bash_event 'while rm -rf x; do echo bad; done')")"
 check "hook blocks rm after bang"   2 "$(hook_exit "$(bash_event '! rm -rf x')")"
@@ -96,6 +100,7 @@ check "hook allows git rm"          0 "$(hook_exit "$(bash_event 'git rm --cache
 check "hook allows git clean -n"    0 "$(hook_exit "$(bash_event 'git clean -n')")"
 check "hook allows find -exec absolute printf" 0 "$(hook_exit "$(bash_event 'find . -name x -exec /usr/bin/printf "%s\\n" {} \;')")"
 check "hook allows override prefix" 0 "$(hook_exit "$(bash_event 'TRASH_GUARD_ALLOW=1 rm -rf build')")"
+check "hook rejects override before separator" 2 "$(hook_exit "$(bash_event 'TRASH_GUARD_ALLOW=1 ; rm -rf build')")"
 check "hook ignores non-Bash tool"  0 "$(hook_exit '{"tool_name":"Read","tool_input":{"file_path":"/x"}}')"
 check "hook ignores bad json"       0 "$(hook_exit 'not json at all')"
 printf '%s' "$(bash_event 'rm -rf build')" | TRASH_GUARD_ALLOW=1 python3 "$HOOK" 2>/dev/null
