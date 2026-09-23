@@ -232,7 +232,16 @@ assert codex_market["plugins"][0]["policy"] == {
 }
 assert codex_market["plugins"][0]["category"] == "Productivity"
 
-for adapter_root in (claude_root, codex_root):
+cursor_root = root / "integrations" / "cursor"
+cursor = json.loads((cursor_root / ".cursor-plugin" / "plugin.json").read_text())
+assert cursor["name"] == "agent-trash-guard"
+cursor_hooks = json.loads((cursor_root / "hooks" / "hooks.json").read_text())
+assert cursor_hooks["version"] == 1
+cursor_entry = cursor_hooks["hooks"]["beforeShellExecution"][0]
+assert cursor_entry == {"command": 'python3 "${CURSOR_PLUGIN_ROOT}/hooks/cursor_guard.py"', "failClosed": True}
+assert cursor["version"] == "0.1.3"
+
+for adapter_root in (claude_root, codex_root, cursor_root):
     for relative in (
         "hooks/trash_guard.py",
         "bin/agent-trash",
@@ -245,6 +254,46 @@ check "package roots and generated runtimes are valid" 0 "$?"
 
 python3 "$REPO_DIR/tools/build_platform_bundles.py" --check >/dev/null
 check "generated runtime parity check passes" 0 "$?"
+
+python3 - "$REPO_DIR/integrations/cursor" <<'PY'
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+root = pathlib.Path(sys.argv[1])
+hook = root / "hooks" / "cursor_guard.py"
+cursor_entry = json.loads((root / "hooks" / "hooks.json").read_text())["hooks"]["beforeShellExecution"][0]
+def run(payload):
+    done = subprocess.run(
+        [sys.executable, str(hook)], input=payload, text=True,
+        capture_output=True, cwd=root, check=True,
+    )
+    return json.loads(done.stdout)
+
+def run_from_workspace(payload):
+    done = subprocess.run(
+        cursor_entry["command"], input=payload, text=True, shell=True,
+        capture_output=True, cwd=root.parent, check=True,
+        env={**os.environ, "CURSOR_PLUGIN_ROOT": str(root)},
+    )
+    return json.loads(done.stdout)
+
+assert run('{"command":"ls -la","cwd":"/tmp","sandbox":false}')["permission"] == "allow"
+denied = run('{"command":"rm -rf build","cwd":"/tmp","sandbox":false}')
+assert denied["permission"] == "deny"
+assert str(root / "bin" / "agent-trash") in denied["agent_message"]
+assert run('{"command":"TRASH_GUARD_ALLOW=1 rm -rf build"}')["permission"] == "allow"
+assert run('{"command":"echo TRASH_GUARD_ALLOW=1; rm -rf build"}')["permission"] == "deny"
+assert run('{"command":"TRASH_GUARD_ALLOW=1 ; rm -rf build"}')["permission"] == "deny"
+assert run('{"command":"TRASH_GUARD_ALLOW=1\\nrm -rf build"}')["permission"] == "deny"
+assert run('{"command":"TRASH_GUARD_ALLOW=1 ls && rm -rf build"}')["permission"] == "deny"
+assert run('{"cwd":"/tmp"}')["permission"] == "deny"
+assert run('not json')["permission"] == "deny"
+assert run_from_workspace('{"command":"shred -u notes.txt"}')["permission"] == "deny"
+PY
+check "Cursor hook uses canonical detector and blocks unsafe input" 0 "$?"
 
 PLUGIN_ERR="$({
   printf '%s' "$(bash_event 'rm -rf build')" |

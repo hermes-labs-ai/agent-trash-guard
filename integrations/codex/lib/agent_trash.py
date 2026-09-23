@@ -24,8 +24,8 @@ TRASH_DIR = os.environ.get("AGENT_TRASH_DIR") or os.environ.get(
 )
 MANIFEST = "manifest.json"
 
-# Each host bundle (repo root, integrations/claude, integrations/codex, and
-# integrations/openclaw) carries
+# Each host bundle (repo root, integrations/claude, integrations/codex,
+# integrations/cursor, and integrations/openclaw) carries
 # a byte-identical copy of this file alongside its own plugin manifest. Read
 # the version from that manifest rather than hard-coding a second copy here.
 _MANIFEST_CANDIDATES = (
@@ -33,6 +33,7 @@ _MANIFEST_CANDIDATES = (
     "openclaw.plugin.json",
     os.path.join(".codex-plugin", "plugin.json"),
     os.path.join(".claude-plugin", "plugin.json"),
+    os.path.join(".cursor-plugin", "plugin.json"),
 )
 
 

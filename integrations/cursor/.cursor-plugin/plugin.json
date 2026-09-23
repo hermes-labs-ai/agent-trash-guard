@@ -1,0 +1,10 @@
+{
+  "name": "agent-trash-guard",
+  "version": "0.1.3",
+  "description": "Block permanent shell deletes and guide agents to recoverable trash.",
+  "author": { "name": "Hermes Labs" },
+  "homepage": "https://github.com/hermes-labs-ai/agent-trash-guard",
+  "repository": "https://github.com/hermes-labs-ai/agent-trash-guard",
+  "license": "MIT",
+  "hooks": "./hooks/hooks.json"
+}

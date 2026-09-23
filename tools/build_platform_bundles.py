@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create or verify the runtime copies needed by cached agent plugins.
 
-Claude, Codex, and OpenClaw execute installed packages in isolation, so their
+Claude, Codex, Cursor, and OpenClaw execute installed packages in isolation, so their
 adapter roots must each contain the hook and CLI runtime. These files are
 generated from the repository root; never edit a copy by hand.
 
@@ -29,6 +29,7 @@ TARGETS = {
     Path("integrations/claude"): RUNTIME_FILES,
     Path("integrations/codex"): RUNTIME_FILES + (SKILL_FILE,),
     Path("integrations/openclaw"): RUNTIME_FILES,
+    Path("integrations/cursor"): RUNTIME_FILES,
 }
 
 

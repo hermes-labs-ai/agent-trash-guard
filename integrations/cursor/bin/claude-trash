@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Backward-compatible Claude-specific entry point for Agent Trash Guard."""
+import os
+import runpy
+
+launcher = os.path.realpath(__file__)
+runpy.run_path(
+    os.path.join(os.path.dirname(launcher), "..", "lib", "agent_trash.py"),
+    run_name="__main__",
+)
