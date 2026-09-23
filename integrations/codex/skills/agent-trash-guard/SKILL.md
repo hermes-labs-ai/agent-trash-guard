@@ -6,12 +6,12 @@ description: Move files to recoverable trash instead of deleting them, list what
 agent-trash-guard (https://github.com/hermes-labs-ai/agent-trash-guard) has two
 parts:
 
-- **Automatic guard.** A pre-tool hook blocks shell commands that permanently
+- **Automatic guard.** A pre-tool adapter blocks shell commands that permanently
   delete files and tells the agent to use `agent-trash put` instead. It runs
   only where a host adapter is installed and enabled: the Claude Code plugin,
-  the Codex plugin after its hook is trusted with `/hooks`, or the Gemini CLI
-  extension. This skill alone (for example from `npx skills add`) installs no
-  hook.
+  the Codex plugin after its hook is trusted with `/hooks`, or the native
+  Cursor, Gemini CLI, OpenClaw, or Pi integration. This skill alone (for
+  example from `npx skills add`) installs no guard.
 - **`agent-trash` CLI.** A deterministic, stdlib-only Python tool that moves
   paths into a trash directory and moves them back. It makes no network calls.
 
@@ -103,7 +103,8 @@ to reason about the result rather than display it.
   `unlink`, `shred`, and `rmdir` in command position, `find -delete`,
   `find -exec rm`, and `git clean -f`. It does not see deletes made through
   file-editing tools, scripts, interpreter one-liners, `bash -c` strings,
-  overwrites, truncation, or `git rm`. It is a pattern match that fails open
-  on unreadable events, not universal deletion protection.
+  overwrites, truncation, or `git rm`. It is a pattern match, not universal
+  deletion protection. The Pi adapter blocks when it cannot inspect a shell
+  command; failure behavior in other hosts varies.
 - Trash lives on the same machine in `$AGENT_TRASH_DIR` (legacy
   `$CLAUDE_TRASH_DIR`, default `~/.claude-trash`). It is not a backup.
