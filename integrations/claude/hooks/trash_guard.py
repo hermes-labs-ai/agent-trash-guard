@@ -19,13 +19,18 @@ SHELL_INTERPRETERS = {"bash", "sh", "zsh", "dash", "ksh", "ash"}
 
 # Prefixes that pass command position through to the next real token without
 # being a command themselves.
-WRAPPER_CMDS = {"sudo", "command", "nohup", "time"}
+WRAPPER_CMDS = {"sudo", "command", "nohup", "time", "exec"}
 KEYWORDS = {"then", "do", "else", "elif", "if", "while", "until", "!"}
 
 # Short wrapper flags (sudo's, mainly) that consume a following argument, so
 # that argument doesn't get mistaken for the command being resolved (e.g. the
 # `root` in `sudo -u root rm -rf x`, not `rm`, follows `-u`).
-WRAPPER_VALUE_FLAGS = {"-C", "-D", "-g", "-h", "-p", "-R", "-r", "-T", "-U", "-u"}
+WRAPPER_VALUE_FLAGS = {"-C", "-D", "-g", "-h", "-p", "-R", "-r", "-T", "-U", "-u", "-a"}
+ENV_VALUE_FLAGS = {"-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-P"}
+XARGS_VALUE_FLAGS = {
+    "-a", "--arg-file", "-d", "--delimiter", "-E", "--eof", "-I", "--replace",
+    "-L", "--max-lines", "-n", "--max-args", "-P", "--max-procs", "-s", "--max-chars",
+}
 
 # Characters that separate shell statements/command groups. A token made up
 # entirely of these characters (`;`, `&`, `&&`, `(`, `)`, `{`, `}`, a
@@ -54,6 +59,15 @@ LEGACY_COMMAND_POSITION = re.compile(
 MAX_UNWRAP_DEPTH = 8
 
 
+def has_command_override(command):
+    """A one-off override must prefix one simple shell command, not a list."""
+    match = re.match(r"^[ \t]*TRASH_GUARD_ALLOW=1[ \t]+", command)
+    if match is None:
+        return False
+    remainder = command[match.end():]
+    return bool(remainder.strip()) and not any(char in remainder for char in ";&|`$<>(){}\\\r\n")
+
+
 def _tokenize(command):
     """Shell-aware tokenizer: quotes group into single (dequoted) words,
     operators split out as their own tokens even when unquoted and
@@ -75,8 +89,7 @@ def _is_operator(token):
 def _resolve_head(tokens, start):
     """Walk past wrapper prefixes (bare VAR=val assignments, sudo [-flags]/
     command/nohup/time, env VAR=val..., xargs [-flags]) to the token that is
-    actually executed. Returns the index of that token, or None if the
-    statement runs out first."""
+    actually executed. Returns its index, or -1 for opaque env split-string."""
     i, n = start, len(tokens)
     while i < n:
         tok = tokens[i]
@@ -95,13 +108,38 @@ def _resolve_head(tokens, start):
             continue
         if tok == "env":
             i += 1
-            while i < n and ENV_ASSIGNMENT.match(tokens[i]):
-                i += 1
+            while i < n and not _is_operator(tokens[i]):
+                flag = tokens[i]
+                if flag == "--":
+                    i += 1
+                    break
+                if flag in {"-S", "--split-string"} or flag.startswith("--split-string=") or (flag.startswith("-S") and len(flag) > 2):
+                    # env -S has its own escape and expansion language (not
+                    # POSIX shell quoting). Refuse it instead of guessing what
+                    # executable its split string will produce.
+                    return -1
+                if ENV_ASSIGNMENT.match(flag) or flag.startswith("--unset=") or flag.startswith("--chdir=") or flag.startswith("--split-string="):
+                    i += 1
+                    continue
+                if flag in ENV_VALUE_FLAGS:
+                    i += 2
+                    continue
+                if flag.startswith("-"):
+                    i += 1
+                    continue
+                break
             continue
         if tok == "xargs":
             i += 1
             while i < n and tokens[i].startswith("-") and not _is_operator(tokens[i]):
-                i += 1
+                flag = tokens[i]
+                if flag == "--":
+                    i += 1
+                    break
+                if flag in XARGS_VALUE_FLAGS:
+                    i += 2
+                else:
+                    i += 1
             continue
         break
     return i if i < n else None
@@ -149,6 +187,8 @@ def _eval_code(tokens, head_idx):
 
 def _check_candidate(tokens, idx, depth):
     head_idx = _resolve_head(tokens, idx)
+    if head_idx == -1:
+        return "env -S (opaque command)"
     if head_idx is None:
         return None
     head = tokens[head_idx]
@@ -218,9 +258,7 @@ def main():
     command = (event.get("tool_input") or {}).get("command", "")
     if not command:
         sys.exit(0)
-    if os.environ.get("TRASH_GUARD_ALLOW") == "1" or re.search(
-        r"\bTRASH_GUARD_ALLOW=1\b", command
-    ):
+    if os.environ.get("TRASH_GUARD_ALLOW") == "1" or has_command_override(command):
         sys.exit(0)
     violation = find_violation(command)
     if violation is None:
