@@ -8,7 +8,7 @@
 
 <p><strong>A safety net for coding-agent sessions: block permanent deletes and keep recovery within reach.</strong></p>
 
-<p>Native guards for Claude Code, Codex, Gemini CLI, and OpenClaw, backed by one detector and an inspectable <code>agent-trash</code> workflow.</p>
+<p>Native guards for Claude Code, Codex, Cursor, Gemini CLI, OpenClaw, and Pi, backed by one detector and an inspectable <code>agent-trash</code> workflow.</p>
 
 <p>Agent Trash Guard is developed by <a href="https://hermes-labs.ai">Hermes Labs</a>.</p>
 
@@ -30,7 +30,7 @@
 
 Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 `rm` has no undo. This project provides native pre-tool adapters for Claude
-Code, Codex, Gemini CLI, and OpenClaw, backed by one detector and the `agent-trash` CLI.
+Code, Codex, Cursor, Gemini CLI, OpenClaw, and Pi, backed by one detector and the `agent-trash` CLI.
 Recognized guarded delete commands are blocked before execution; use
 `agent-trash put` to make the recoverable move you can inspect and reverse.
 `agent-trash gc` reclaims the space those moves accumulate without ever
@@ -46,16 +46,18 @@ No dependencies beyond Python 3 (stdlib only) and bash.
 ## Install
 
 The repository root is one portable Agent Plugin (`plugin.json`, Agent Plugins
-1.0.0) with one canonical skill, `skills/agent-trash-guard/SKILL.md`. Each host
-installs the automatic delete guard, the `agent-trash` CLI, and that skill with
-one native command:
+1.0.0) with one canonical skill, `skills/agent-trash-guard/SKILL.md`. Choose a
+host route that loads the executable guard. A skill-only install teaches the
+workflow but cannot intercept shell commands.
 
 | Host | Install | Read back |
 | --- | --- | --- |
 | Claude Code | `claude plugin marketplace add hermes-labs-ai/agent-trash-guard && claude plugin install agent-trash-guard@hermes-labs` | `claude plugin list` |
 | Codex CLI | `codex plugin marketplace add hermes-labs-ai/agent-trash-guard && codex plugin add agent-trash-guard@hermes-labs` | `codex plugin list`, then trust the hook with `/hooks` |
+| Cursor | Clone the repository, then copy `integrations/cursor/` to `~/.cursor/plugins/local/agent-trash-guard/` | Restart Cursor; inspect Customize → Plugins and test a disposable delete |
 | Gemini CLI | `gemini extensions install https://github.com/hermes-labs-ai/agent-trash-guard --ref main` | `gemini skills list` |
 | OpenClaw | `openclaw plugins install ./integrations/openclaw` | `openclaw plugins inspect agent-trash-guard --json` |
+| Pi | `pi install git:github.com/hermes-labs-ai/agent-trash-guard@main` | `pi list`, then test a disposable delete in Pi's Bash tool |
 | skills.sh (skill only) | `npx skills add https://github.com/hermes-labs-ai/agent-trash-guard --skill agent-trash-guard` | `npx skills list` |
 
 The skill teaches an agent to use `agent-trash put`, `list`, and `restore`
@@ -81,8 +83,8 @@ review before treating delete interception as active. Until then, Codex loads
 the skill but skips its non-managed hook.
 
 The guard is a convenience layer, not universal deletion protection: it fails
-open when it cannot parse a Claude/Codex/Gemini hook event. The OpenClaw
-bridge instead fails closed when it cannot verify an `exec` command. All hosts
+open when it cannot parse a Claude/Codex/Gemini hook event. The Cursor, OpenClaw,
+and Pi adapters fail closed when they cannot inspect a shell command. All hosts
 have documented command-pattern limits, and the local trash is not a backup.
 Keep normal backups and inspect the
 supported-command boundaries below before relying on it for an important path.
@@ -184,6 +186,46 @@ For local development use `gemini extensions link "$PWD"`. The old
 `integrations/gemini/install.sh` and `uninstall.sh` remain only to remove or
 maintain a pre-extension settings-based installation; they are not the primary
 installation route.
+
+## Cursor
+
+Cursor loads the self-contained bundle at `integrations/cursor/`. Until a
+marketplace listing is available, use Cursor's documented local-plugin path:
+
+```bash
+git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
+mkdir -p ~/.cursor/plugins/local
+cp -R agent-trash-guard/integrations/cursor ~/.cursor/plugins/local/agent-trash-guard
+```
+
+Restart Cursor and inspect Customize → Plugins. In an IDE agent session, create
+a disposable file and ask Cursor to run `rm FILE_PATH` as a shell command. The
+`beforeShellExecution` hook denies it and gives the bundled `agent-trash` path.
+Run that path with `put FILE_PATH`, `list`, then `restore ENTRY_ID`; the same
+file should return. Copying the bundle does not add a global `agent-trash`
+command. Remove `~/.cursor/plugins/local/agent-trash-guard` to uninstall this
+local plugin. Cursor's Tab edits and non-shell tools are outside this hook.
+When updating this local copy, remove only
+`~/.cursor/plugins/local/agent-trash-guard` before repeating the copy command;
+otherwise `cp -R` can nest a second `cursor/` directory under the old bundle.
+
+## Pi
+
+Pi loads the root `skills/` and `extensions/` directories from a Git package:
+
+```bash
+pi install git:github.com/hermes-labs-ai/agent-trash-guard@main
+pi list
+```
+
+Start a new Pi session (or `/reload` an existing one). The TypeScript extension
+intercepts Pi's `bash` tool at `tool_call` and asks the canonical Python detector
+to decide before the shell runs. It needs Python 3 on `PATH`. In Pi, create a
+disposable file, then ask for `rm FILE_PATH`: the tool should be blocked and the
+file should remain. Use the exact bundled `bin/agent-trash` path in the block
+message with `put FILE_PATH`, `list`, and `restore ENTRY_ID` to verify recovery.
+`pi list` proves package registration, not that the guard blocked a command.
+Remove it with `pi remove git:github.com/hermes-labs-ai/agent-trash-guard@main`.
 
 ## Manual Claude installation fallback
 
