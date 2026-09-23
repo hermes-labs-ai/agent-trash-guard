@@ -89,8 +89,7 @@ def _is_operator(token):
 def _resolve_head(tokens, start):
     """Walk past wrapper prefixes (bare VAR=val assignments, sudo [-flags]/
     command/nohup/time, env VAR=val..., xargs [-flags]) to the token that is
-    actually executed. Returns the index of that token, or None if the
-    statement runs out first."""
+    actually executed. Returns its index and optional env split-string source."""
     i, n = start, len(tokens)
     while i < n:
         tok = tokens[i]
@@ -114,6 +113,21 @@ def _resolve_head(tokens, start):
                 if flag == "--":
                     i += 1
                     break
+                if flag in {"-S", "--split-string"} or flag.startswith("--split-string=") or (flag.startswith("-S") and len(flag) > 2):
+                    if flag in {"-S", "--split-string"}:
+                        i += 1
+                        if i >= n or _is_operator(tokens[i]):
+                            return None, None
+                        source = tokens[i]
+                        i += 1
+                    else:
+                        source = flag.split("=", 1)[1] if flag.startswith("--") else flag[2:]
+                        i += 1
+                    parts = [source]
+                    while i < n and not _is_operator(tokens[i]):
+                        parts.append(tokens[i])
+                        i += 1
+                    return None, " ".join(parts)
                 if ENV_ASSIGNMENT.match(flag) or flag.startswith("--unset=") or flag.startswith("--chdir=") or flag.startswith("--split-string="):
                     i += 1
                     continue
@@ -138,7 +152,7 @@ def _resolve_head(tokens, start):
                     i += 1
             continue
         break
-    return i if i < n else None
+    return (i if i < n else None), None
 
 
 def _interpreter_code(tokens, head_idx):
@@ -182,7 +196,11 @@ def _eval_code(tokens, head_idx):
 
 
 def _check_candidate(tokens, idx, depth):
-    head_idx = _resolve_head(tokens, idx)
+    head_idx, split_code = _resolve_head(tokens, idx)
+    if split_code is not None:
+        if depth >= MAX_UNWRAP_DEPTH:
+            return "max-nesting-depth"
+        return find_violation(split_code, depth + 1)
     if head_idx is None:
         return None
     head = tokens[head_idx]
