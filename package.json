@@ -10,6 +10,7 @@
   "keywords": ["pi-package", "pi-extension", "coding-agent", "recoverable-deletion"],
   "engines": { "node": ">=22.19.0" },
   "peerDependencies": { "@earendil-works/pi-coding-agent": "*" },
+  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true } },
   "files": [
     "extensions/agent-trash-guard.ts",
     "skills/agent-trash-guard/SKILL.md",
