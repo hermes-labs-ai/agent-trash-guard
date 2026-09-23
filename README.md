@@ -8,11 +8,13 @@
 
 <p><strong>A safety net for coding-agent sessions: block permanent deletes and keep recovery within reach.</strong></p>
 
-<p>Native guards for Claude Code, Codex, Cursor, Gemini CLI, OpenClaw, and Pi, backed by one detector and an inspectable <code>agent-trash</code> workflow.</p>
-
 <p>Agent Trash Guard is developed by <a href="https://hermes-labs.ai">Hermes Labs</a>.</p>
 
-<p>Hermes Labs studies failure modes in agent and LLM systems, develops open-source tools that treat language as part of the runtime, and works with teams to remediate reliability failures in production.</p>
+<p>Hermes Labs is an agentic infrastructure company building the reliability layer for autonomous systems.</p>
+
+<a href="https://github.com/hermes-labs-ai/agent-trash-guard/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/hermes-labs-ai/agent-trash-guard?display_name=tag&amp;sort=semver"></a>
+<a href="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg"></a>
+<a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
 
 <p>
 <a href="#install">Install</a> ·
@@ -22,11 +24,9 @@
 <a href="#tests">Tests</a>
 </p>
 
-<a href="https://github.com/hermes-labs-ai/agent-trash-guard/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/hermes-labs-ai/agent-trash-guard?display_name=tag&amp;sort=semver"></a>
-<a href="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg"></a>
-<a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-
 </div>
+
+<p>Native guards for Claude Code, Codex, Cursor, Gemini CLI, OpenClaw, and Pi, backed by one detector and an inspectable <code>agent-trash</code> workflow.</p>
 
 Agents are good at cleaning up. Sometimes they clean up the wrong thing, and
 `rm` has no undo. This project provides native pre-tool adapters for Claude
