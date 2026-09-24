@@ -2,6 +2,7 @@
   "name": "agent-trash-guard",
   "version": "0.1.3",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Blocks permanent-delete exec calls through OpenClaw's native before_tool_call hook.",
   "files": ["index.js", "entry.js", "bridge.js", "openclaw.plugin.json", "hooks/", "bin/", "lib/"],

@@ -2,7 +2,7 @@
   "name": "agent-trash-guard",
   "version": "0.1.3",
   "description": "Native Pi guard for recoverable file deletion",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hermes-labs-ai/agent-trash-guard.git"

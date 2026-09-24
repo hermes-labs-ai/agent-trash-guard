@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/hermes-labs-ai/agent-trash-guard",
   "repository": "https://github.com/hermes-labs-ai/agent-trash-guard",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["safety", "trash", "recovery", "hooks", "skills"],
   "hooks": "./integrations/claude/hooks/hooks.json"
 }

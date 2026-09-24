@@ -41,7 +41,8 @@ Use this repo when you need to:
 - No dependencies beyond Python 3 (stdlib only) and bash
 - Guard behavior, the `agent-trash` CLI, retention (`gc`), and the skill are exercised by `./tests/run.sh` and `tests/recoverability-demo.sh`
 - `gc` decides with one ordered ladder, first match wins: 1 protected denylist, 2 git state unknown, 3 reachable, 4 newer than the age floor, 5 over budget (collect oldest first), 6 keep; a failing git call is UNKNOWN and is never read as clean
-- Current release: v0.1.3, MIT licensed
+- Current source license: Apache-2.0
+- Published release: v0.1.3, MIT licensed
 
 ## About Hermes Labs
 
