@@ -14,7 +14,7 @@
 
 <a href="https://github.com/hermes-labs-ai/agent-trash-guard/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/hermes-labs-ai/agent-trash-guard?display_name=tag&amp;sort=semver"></a>
 <a href="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hermes-labs-ai/agent-trash-guard/actions/workflows/ci.yml/badge.svg"></a>
-<a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+<a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache--2.0-blue.svg"></a>
 
 <p>
 <a href="#install">Install</a> ·
@@ -493,4 +493,4 @@ The script stops at the first failed step with a non-zero exit and prints
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).

@@ -5,6 +5,6 @@
   "author": { "name": "Hermes Labs" },
   "homepage": "https://github.com/hermes-labs-ai/agent-trash-guard",
   "repository": "https://github.com/hermes-labs-ai/agent-trash-guard",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "hooks": "./hooks/hooks.json"
 }
