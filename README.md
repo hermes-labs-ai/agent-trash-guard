@@ -43,6 +43,23 @@ command. New integrations and documentation use the platform-neutral
 
 No dependencies beyond Python 3 (stdlib only) and bash.
 
+## Try it in 30 seconds (no install)
+
+No plugin, no host setup. This runs the real hook and the real CLI against a
+throwaway directory and proves the whole loop — block, trash, list, restore —
+byte-for-byte:
+
+```bash
+git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
+cd agent-trash-guard
+./tests/recoverability-demo.sh
+```
+
+You'll see a `rm -rf` get blocked cold (hook exit 2, file untouched), then
+`agent-trash put` / `list` / `restore` move the file out and back with a
+matching SHA-256. Under a second on most machines, and it never touches your
+files or your real trash directory.
+
 ## Install
 
 The repository root is one portable Agent Plugin (`plugin.json`, Agent Plugins
