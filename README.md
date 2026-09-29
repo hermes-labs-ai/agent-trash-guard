@@ -62,6 +62,27 @@ files or your real trash directory.
 
 ## Install
 
+### One-liner: guard + CLI for Claude Code (recommended)
+
+```bash
+git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
+cd agent-trash-guard
+./install.sh
+```
+
+`install.sh` symlinks `agent-trash` (plus the legacy `claude-trash` alias)
+into `~/.local/bin` and registers the Claude adapter in
+`~/.claude/settings.json`. A timestamped backup of `settings.json` is written
+before any change, existing settings and other hooks are preserved, and the
+edit is idempotent. If `~/.local/bin` is not on your PATH, `install.sh` prints
+the exact `export PATH=...` line to run for the current shell. Restart any
+running Claude Code session afterwards.
+
+It comes off just as cleanly: `./uninstall.sh` restores `settings.json` from
+the backup and removes the symlinks, leaving your trash directory intact.
+
+### Host plugin routes
+
 The repository root is one portable Agent Plugin (`plugin.json`, Agent Plugins
 1.0.0) with one canonical skill, `skills/agent-trash-guard/SKILL.md`. Choose a
 host route that loads the executable guard. A skill-only install teaches the
@@ -244,21 +265,6 @@ message with `put FILE_PATH`, `list`, and `restore ENTRY_ID` to verify recovery.
 `pi list` proves package registration, not that the guard blocked a command.
 Remove it with `pi remove git:github.com/hermes-labs-ai/agent-trash-guard@main`.
 
-## Manual Claude installation fallback
-
-```bash
-git clone https://github.com/hermes-labs-ai/agent-trash-guard.git
-cd agent-trash-guard
-./tests/run.sh
-./install.sh
-```
-
-`install.sh` symlinks `claude-trash` into `~/.local/bin` and registers the
-Claude adapter in `~/.claude/settings.json` (a timestamped backup is written
-first, and the edit is idempotent). Restart any running Claude Code session
-afterwards. `uninstall.sh` removes only that exact legacy hook command, leaving
-other `trash_guard.py` hooks alone.
-
 ## What gets blocked
 
 When a supported agent is about to run a shell command that permanently
@@ -363,6 +369,11 @@ checkout is UNKNOWN and kept.
 
 A path with no git checkout in it falls back to age and budget only.
 
+A scan root that is itself a git checkout — or a directory inside one — is
+never split into pieces. The checkout is judged atomically as a single unit,
+so pointing `--roots` at a live checkout keeps it whole: its pieces can never
+be scored as "0 git checkouts" and reclaimed one by one.
+
 ### The denylist
 
 `~/.claude`, `~/ai-infra`, `~/github-projects`, and any path that names or
@@ -444,13 +455,18 @@ agent runtime. Both are adapter candidates, not live integrations.
 For the native plugin path, end the `claude --plugin-dir` session or remove the
 plugin through Claude Code's plugin manager. Trash contents remain untouched.
 
-For the manual fallback:
+For the `install.sh` path:
 
 ```bash
 ./uninstall.sh
 ```
 
-Removes the hook entry and the symlink. Your trash directory is left intact.
+Restores `~/.claude/settings.json` from the timestamped backup `install.sh`
+wrote — byte-identical to the pre-install state — removes the `agent-trash`
+and `claude-trash` symlinks, and consumes the install-time backups. Your trash
+directory is left intact. If no backup exists (because `install.sh` created
+`settings.json` from scratch), the hook entry is stripped in place instead and
+the created file is removed.
 
 ## Tests
 
@@ -468,6 +484,10 @@ repositories on the same disk, so `git ls-remote` is exercised for real and the
 suite still needs no network. They pin the cases that matter: a clean pushed
 repository is collectable, while a dirty tree, a stash, an unpushed commit, an
 orphaned worktree whose git calls all fail, and a denylisted path are not.
+They also pin the trust contract adversarially: a checkout passed as the scan
+root itself — dirty, unpushed, stashed, remote-deleted, unborn HEAD, or a bare
+repository — is judged atomically, never split, and survives `--collect`
+byte-identical.
 
 The Hermes Gate rail in `.hermes/` keeps its local scope — worktree, index and
 untracked bytes — when run with no arguments. A hosted checkout has none of
