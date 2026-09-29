@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
 
 DELETE_CMDS = {"rm", "unlink", "shred", "rmdir"}
@@ -263,16 +264,23 @@ def main():
     violation = find_violation(command)
     if violation is None:
         sys.exit(0)
-    # Marketplace and extension installs run from private copies. Prefer an
-    # explicit host root when available, then derive the self-contained bundle
-    # root so Gemini never relies on a global PATH symlink.
-    plugin_root = (
-        os.environ.get("AGENT_TRASH_GUARD_ROOT")
-        or os.environ.get("PLUGIN_ROOT")
-        or os.environ.get("CLAUDE_PLUGIN_ROOT")
-        or os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    )
-    trash_command = '"{}"'.format(os.path.join(plugin_root, "bin", "agent-trash"))
+    # Point at the installed `agent-trash` on PATH whenever it is visible —
+    # that is the binary install.sh set up for the user, and what every doc
+    # example types. Fall back to this bundle's own copy only when no
+    # installed binary is on PATH, so marketplace and extension installs
+    # never depend on a global PATH symlink.
+    if shutil.which("agent-trash") is not None:
+        trash_command = "agent-trash"
+    else:
+        plugin_root = (
+            os.environ.get("AGENT_TRASH_GUARD_ROOT")
+            or os.environ.get("PLUGIN_ROOT")
+            or os.environ.get("CLAUDE_PLUGIN_ROOT")
+            or os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        )
+        trash_command = '"{}"'.format(
+            os.path.join(plugin_root, "bin", "agent-trash")
+        )
     sys.stderr.write(
         "trash-guard: blocked a permanent delete ({0}).\n"
         "Command: {1}\n"

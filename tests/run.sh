@@ -137,7 +137,7 @@ assert set(portable) <= {
     "repository", "license", "keywords", "extensions",
 }
 assert portable["name"] == "agent-trash-guard"
-assert portable["version"] == "0.1.3"
+assert portable["version"] == "0.1.4"
 copilot_hooks = json.loads((root / "com.github.copilot" / "hooks" / "hooks.json").read_text())
 assert copilot_hooks["version"] == 1
 copilot_entry = copilot_hooks["hooks"]["PreToolUse"][0]
@@ -174,7 +174,7 @@ for key in ("author", "homepage", "repository", "license"):
 
 gemini_manifest = json.loads((root / "gemini-extension.json").read_text())
 assert gemini_manifest["name"] == "agent-trash-guard"
-assert gemini_manifest["version"] == "0.1.3"
+assert gemini_manifest["version"] == "0.1.4"
 gemini_hooks = json.loads((root / "hooks" / "hooks.json").read_text())
 gemini_entry = gemini_hooks["hooks"]["BeforeTool"][0]
 assert gemini_entry["matcher"] == "run_shell_command"
@@ -186,7 +186,7 @@ assert gemini_entry["hooks"][0]["timeout"] == 8000
 claude_root = root / "integrations" / "claude"
 manifest = json.loads((claude_root / ".claude-plugin" / "plugin.json").read_text())
 assert manifest["name"] == "claude-trash-guard"
-assert manifest["version"] == "0.1.3"
+assert manifest["version"] == "0.1.4"
 
 # Awesome Copilot's Agent Plugins v1.0.0 intake looks for plugin.json at the
 # submitted plugin root (integrations/claude), not inside .claude-plugin/.
@@ -199,7 +199,7 @@ assert set(agent_plugin) <= {
     "repository", "license", "keywords", "extensions",
 }
 assert agent_plugin["name"] == manifest["name"] == "claude-trash-guard"
-assert agent_plugin["version"] == manifest["version"] == "0.1.3"
+assert agent_plugin["version"] == manifest["version"] == "0.1.4"
 
 marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
 marketplace_entry = marketplace["plugins"][0]
@@ -256,7 +256,7 @@ cursor_hooks = json.loads((cursor_root / "hooks" / "hooks.json").read_text())
 assert cursor_hooks["version"] == 1
 cursor_entry = cursor_hooks["hooks"]["beforeShellExecution"][0]
 assert cursor_entry == {"command": 'python3 "${CURSOR_PLUGIN_ROOT}/hooks/cursor_guard.py"', "failClosed": True}
-assert cursor["version"] == "0.1.3"
+assert cursor["version"] == "0.1.4"
 
 for adapter_root in (claude_root, codex_root, cursor_root):
     for relative in (
@@ -1176,6 +1176,208 @@ check "collect spared the denylisted repo" 0 "$(exists_exit "$GC_REPOS/guarded")
 check "collect wrote an audit receipt" 0 "$(exists_exit "$WORK/gc-receipt.jsonl")"
 python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[0]); sys.exit(0 if all(e["rule"] and e["reason"] and e["path"] for e in r["entries"]) else 1)' "$WORK/gc-receipt.jsonl"
 check "every receipt entry names a rule, a reason and a path" 0 "$?"
+
+# 9. The trust contract: a root that IS a checkout is judged atomically and
+#    never split. These are the shapes the old splitter destroyed — each is
+#    passed as --roots directly, with the age floor at zero, the budget wide
+#    open and --collect armed, and each must survive byte-identical.
+GC_ATOMIC="$GC_WORK/atomic"
+mkdir -p "$GC_ATOMIC/origins"
+
+atomic_repo() {
+  local name="$1"
+  git init -q --bare "$GC_ATOMIC/origins/$name.git" >/dev/null 2>&1
+  git init -q -b main "$GC_ATOMIC/$name" >/dev/null 2>&1
+  printf '%s\n' "$name" > "$GC_ATOMIC/$name/file.txt"
+  gc_git "$GC_ATOMIC/$name" add file.txt
+  gc_git "$GC_ATOMIC/$name" commit -m "initial"
+  gc_git "$GC_ATOMIC/$name" remote add origin "$GC_ATOMIC/origins/$name.git"
+  gc_git "$GC_ATOMIC/$name" push -u origin main
+}
+
+# The friction-log break, exactly: dirty work plus an unpushed commit, with a
+# healthy remote, passed as the root itself.
+atomic_repo victim
+printf '%s\n' "uncommitted dirty line" >> "$GC_ATOMIC/victim/file.txt"
+printf '%s\n' "new" > "$GC_ATOMIC/victim/new.txt"
+gc_git "$GC_ATOMIC/victim" add new.txt
+gc_git "$GC_ATOMIC/victim" commit -m "unpushed work"
+mkdir -p "$GC_ATOMIC/victim/sub"
+printf '%s\n' "inside" > "$GC_ATOMIC/victim/sub/inner.txt"
+
+atomic_repo unpushed-root
+printf '%s\n' "second" > "$GC_ATOMIC/unpushed-root/file.txt"
+gc_git "$GC_ATOMIC/unpushed-root" commit -am "unpushed work"
+
+atomic_repo stashed-root
+printf '%s\n' "parked" > "$GC_ATOMIC/stashed-root/file.txt"
+gc_git "$GC_ATOMIC/stashed-root" stash push -m "trash-guard-gc-fixture"
+
+# Clean and pushed, then the remote itself is deleted: the checkout passes
+# every local check and dies at ls-remote, which must read as UNKNOWN.
+atomic_repo gone-remote
+rm -rf "$GC_ATOMIC/origins/gone-remote.git"
+
+# An unborn HEAD: no commits at all, on a remote that advertises nothing.
+git init -q --bare "$GC_ATOMIC/origins/unborn.git" >/dev/null 2>&1
+git init -q -b main "$GC_ATOMIC/unborn" >/dev/null 2>&1
+git -C "$GC_ATOMIC/unborn" remote add origin \
+  "$GC_ATOMIC/origins/unborn.git" >/dev/null 2>&1
+
+git init -q --bare "$GC_ATOMIC/bareroot" >/dev/null 2>&1
+
+atomic_repo pushed-clean
+
+gc_run --roots "$GC_ATOMIC/victim" --older-than 0 --budget 0
+check "a checkout passed as the root is one candidate, not split pieces" 1 \
+  "$(gc_query total candidates)"
+check "checkout-as-root is kept" "keep" "$(gc_query decision victim)"
+check "checkout-as-root is reachable" "reachable" "$(gc_query verdict victim)"
+check "checkout-as-root is decided by rule 3" 3 "$(gc_query rule victim)"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/victim")][0]; sys.exit(0 if any(i.get("check")=="root-checkout" and i.get("result")=="atomic" for i in e["evidence"]) else 1)' "$WORK/gc.json"
+check "checkout-as-root evidence records the atomic judgment" 0 "$?"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/victim")][0]; sys.exit(0 if "0 git checkouts" not in json.dumps(e["evidence"]) else 1)' "$WORK/gc.json"
+check "checkout-as-root is never scored as 0 git checkouts" 0 "$?"
+
+# The adversarial run: --collect armed against the live checkout.
+gc_run --roots "$GC_ATOMIC/victim" --older-than 0 --budget 0 --collect
+check "collect against a live checkout exits 0" 0 "$?"
+check "collect spared the checkout directory" 0 \
+  "$(exists_exit "$GC_ATOMIC/victim")"
+check "collect spared the .git directory" 0 \
+  "$(exists_exit "$GC_ATOMIC/victim/.git")"
+check "collect spared the dirty line" 0 \
+  "$(grep -q "uncommitted dirty line" "$GC_ATOMIC/victim/file.txt"; echo $?)"
+check "collect spared the unpushed commit" "unpushed work" \
+  "$(git -C "$GC_ATOMIC/victim" log --format=%s -1)"
+
+# A subdirectory of a checkout as the root: the enclosing checkout is judged,
+# so the dirty tree still keeps it.
+gc_run --roots "$GC_ATOMIC/victim/sub" --older-than 0 --budget 0
+check "a subdir of a checkout is one candidate" 1 \
+  "$(gc_query total candidates)"
+check "a subdir of a checkout is kept" "keep" "$(gc_query decision sub)"
+check "a subdir of a checkout is decided by rule 3" 3 \
+  "$(gc_query rule sub)"
+
+gc_run --roots "$GC_ATOMIC/unpushed-root" --older-than 0 --budget 0 --collect
+check "checkout-as-root with an unpushed commit is kept" "keep" \
+  "$(gc_query decision unpushed-root)"
+check "the unpushed commit survived" "unpushed work" \
+  "$(git -C "$GC_ATOMIC/unpushed-root" log --format=%s -1)"
+
+gc_run --roots "$GC_ATOMIC/stashed-root" --older-than 0 --budget 0 --collect
+check "checkout-as-root with a stash is kept" "keep" \
+  "$(gc_query decision stashed-root)"
+check "the stash survived" 1 \
+  "$(git -C "$GC_ATOMIC/stashed-root" stash list | grep -c trash-guard-gc-fixture)"
+
+gc_run --roots "$GC_ATOMIC/gone-remote" --older-than 0 --budget 0 --collect
+check "checkout-as-root with a deleted remote is kept" "keep" \
+  "$(gc_query decision gone-remote)"
+check "a deleted remote is unknown, not clean" "unknown" \
+  "$(gc_query verdict gone-remote)"
+check "a deleted remote is decided by rule 2" 2 \
+  "$(gc_query rule gone-remote)"
+
+gc_run --roots "$GC_ATOMIC/unborn" --older-than 0 --budget 0 --collect
+check "a checkout with an unborn HEAD is kept" "keep" \
+  "$(gc_query decision unborn)"
+check "an unborn HEAD is decided by rule 3" 3 "$(gc_query rule unborn)"
+
+gc_run --roots "$GC_ATOMIC/bareroot" --older-than 0 --budget 0 --collect
+check "a bare repository as the root is kept" "keep" \
+  "$(gc_query decision bareroot)"
+check "a bare repository is unknown, not clean" "unknown" \
+  "$(gc_query verdict bareroot)"
+check "the bare repository survived" 0 \
+  "$(exists_exit "$GC_ATOMIC/bareroot/HEAD")"
+
+# The shape gc IS allowed to reclaim still works when it is the root: judged
+# atomically, unreachable, collectable under budget.
+gc_run --roots "$GC_ATOMIC/pushed-clean" --older-than 0 --budget 0
+check "a clean pushed checkout as the root is one candidate" 1 \
+  "$(gc_query total candidates)"
+check "a clean pushed checkout as the root is unreachable" "unreachable" \
+  "$(gc_query verdict pushed-clean)"
+check "a clean pushed checkout as the root is collectable" "collect" \
+  "$(gc_query decision pushed-clean)"
+gc_run --roots "$GC_ATOMIC/pushed-clean" --older-than 0 --budget 0 --collect
+check "collect reclaimed the clean pushed checkout" 1 \
+  "$(exists_exit "$GC_ATOMIC/pushed-clean")"
+
+# 9b. A gitignored nested checkout inside a clean+pushed outer root: the
+#     atomic judgment must evaluate the nested checkout too, not just the
+#     toplevel. The first atomic fix judged only the toplevel, so this exact
+#     shape was collected — shredding the nested repo's unpushed work.
+atomic_repo outer-nested
+printf 'vendor/\n' > "$GC_ATOMIC/outer-nested/.gitignore"
+gc_git "$GC_ATOMIC/outer-nested" add .gitignore
+gc_git "$GC_ATOMIC/outer-nested" commit -m "ignore vendor"
+gc_git "$GC_ATOMIC/outer-nested" push origin main
+mkdir -p "$GC_ATOMIC/outer-nested/vendor/nested"
+git init -q -b main "$GC_ATOMIC/outer-nested/vendor/nested" >/dev/null 2>&1
+printf '%s\n' "precious" > "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"
+gc_git "$GC_ATOMIC/outer-nested/vendor/nested" add work.txt
+gc_git "$GC_ATOMIC/outer-nested/vendor/nested" commit -m "unpushed work"
+printf '%s\n' "dirty line" >> "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"
+# The nested repo has no remote: the commit and the dirty line are local-only.
+
+gc_run --roots "$GC_ATOMIC/outer-nested" --older-than 0 --budget 0
+check "nested-checkout root is one candidate" 1 \
+  "$(gc_query total candidates)"
+check "nested-checkout root is kept" "keep" \
+  "$(gc_query decision outer-nested)"
+check "nested-checkout root is reachable" "reachable" \
+  "$(gc_query verdict outer-nested)"
+check "nested-checkout root is decided by rule 3" 3 \
+  "$(gc_query rule outer-nested)"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/outer-nested")][0]; sys.exit(0 if "vendor/nested" in e["verdict_reason"] else 1)' "$WORK/gc.json"
+check "the verdict names the nested checkout that keeps the root" 0 "$?"
+
+gc_run --roots "$GC_ATOMIC/outer-nested" --older-than 0 --budget 0 --collect
+check "collect spared the outer root" 0 \
+  "$(exists_exit "$GC_ATOMIC/outer-nested")"
+check "collect spared the nested unpushed commit" "unpushed work" \
+  "$(git -C "$GC_ATOMIC/outer-nested/vendor/nested" log --format=%s -1)"
+check "collect spared the nested dirty line" 0 \
+  "$(grep -q "dirty line" "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"; echo $?)"
+
+# Submodule variant: the submodule working copy carries unpushed commits and
+# has no remote, while the outer records the submodule's gitlink and is
+# itself clean and pushed. Same code path as the nested repo above - the
+# submodule dir carries a .git file - and the nested judgment is what must
+# keep the root.
+git init -q -b main "$GC_ATOMIC/subsrc" >/dev/null 2>&1
+printf '%s\n' "sub" > "$GC_ATOMIC/subsrc/f.txt"
+gc_git "$GC_ATOMIC/subsrc" add f.txt
+gc_git "$GC_ATOMIC/subsrc" commit -m "sub init"
+atomic_repo outer-sub
+gc_git "$GC_ATOMIC/outer-sub" submodule add "$GC_ATOMIC/subsrc" vendor/sub
+gc_git "$GC_ATOMIC/outer-sub" commit -m "add submodule"
+# The clone's origin points at the local subsrc path: drop it so the
+# submodule has unpushed commits and no remote, exactly like the gitignored
+# nested repo above. The outer then records the new gitlink and pushes, so
+# its own status stays clean - otherwise the outer shows ` M vendor/sub`,
+# the dirty check keeps the root, and the nested judgment under test is
+# never consulted (the test would pass on the pre-fix code too).
+git -C "$GC_ATOMIC/outer-sub/vendor/sub" remote remove origin >/dev/null 2>&1
+printf '%s\n' "more" >> "$GC_ATOMIC/outer-sub/vendor/sub/f.txt"
+gc_git "$GC_ATOMIC/outer-sub/vendor/sub" commit -am "unpushed in sub"
+gc_git "$GC_ATOMIC/outer-sub" add vendor/sub
+gc_git "$GC_ATOMIC/outer-sub" commit -m "record submodule work"
+gc_git "$GC_ATOMIC/outer-sub" push origin main
+
+check "outer status is clean, so the nested judgment is isolated" "" \
+  "$(git -C "$GC_ATOMIC/outer-sub" status --porcelain)"
+gc_run --roots "$GC_ATOMIC/outer-sub" --older-than 0 --budget 0 --collect
+check "submodule root is kept" "keep" "$(gc_query decision outer-sub)"
+check "submodule root is reachable" "reachable" \
+  "$(gc_query verdict outer-sub)"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/outer-sub")][0]; sys.exit(0 if "vendor/sub" in e["verdict_reason"] else 1)' "$WORK/gc.json"
+check "the verdict names the submodule that keeps the root" 0 "$?"
+check "the submodule unpushed commit survived" "unpushed in sub" \
+  "$(git -C "$GC_ATOMIC/outer-sub/vendor/sub" log --format=%s -1)"
 
 echo
 echo "$PASS passed, $FAIL failed"

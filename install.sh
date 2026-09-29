@@ -36,12 +36,24 @@ ln -sfn "$REPO_DIR/bin/agent-trash" "$BIN_DIR/agent-trash"
 echo "linked $BIN_DIR/agent-trash (plus compatibility alias claude-trash)"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) echo "note: $BIN_DIR is not on your PATH; add it to your shell profile" ;;
+  *)
+    printf 'note: %s is not on your PATH, so the agent-trash command will not run yet.\n' "$BIN_DIR"
+    printf 'for this shell only, run:\n  export PATH="%s:$PATH"\n' "$BIN_DIR"
+    printf 'to keep it, add that line to your shell profile (~/.bashrc or ~/.zshrc).\n'
+    ;;
 esac
 
 mkdir -p "$(dirname "$SETTINGS")"
 if [ -f "$SETTINGS" ]; then
-  cp "$SETTINGS" "$SETTINGS.backup.$(date +%Y%m%d%H%M%S)"
+  # A unique name per backup: two installs in the same second must not
+  # overwrite each other, or the pre-install snapshot is lost.
+  BACKUP="$SETTINGS.backup.$(date +%Y%m%d%H%M%S)"
+  n=0
+  while [ -e "$BACKUP" ] || [ -L "$BACKUP" ]; do
+    n=$((n + 1))
+    BACKUP="$SETTINGS.backup.$(date +%Y%m%d%H%M%S)-$n"
+  done
+  cp "$SETTINGS" "$BACKUP"
   echo "backed up $SETTINGS"
 fi
 

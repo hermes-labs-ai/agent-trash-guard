@@ -360,6 +360,32 @@ def remote_is_local(url):
     return os.path.isdir(url) or os.path.isdir(url + "/objects")
 
 
+def checkout_root_at(root, timeout):
+    """If `root` is a git checkout/worktree, or sits inside one, return the
+    repo path git must judge atomically. Judging the enclosing checkout —
+    instead of the root's split pieces — is what stops a checkout passed as
+    --roots from being scored "0 git checkouts" and collected piece by piece.
+    A bare repository has no work tree, so the root itself is returned: the
+    reachability check cannot answer for it and rule 2 (UNKNOWN) keeps it.
+    Returns None when git cannot place the root in any repository, in which
+    case the root may be split into candidates as before.
+    """
+    try:
+        _, out = run_git(root, ["rev-parse", "--show-toplevel"], timeout)
+        toplevel = out.strip()
+        if toplevel:
+            return toplevel
+    except GitUnknown:
+        pass
+    try:
+        _, out = run_git(root, ["rev-parse", "--is-bare-repository"], timeout)
+        if out.strip() == "true":
+            return root
+    except GitUnknown:
+        pass
+    return None
+
+
 def checkout_reachability(repo, options, remote_cache):
     """Decide whether one git checkout is unreachable (safe to collect).
 
@@ -643,9 +669,13 @@ def gc_decide(record, options, budget_state):
 def gc_candidates(root, depth):
     """Collection units under a root: depth-1 children by default.
 
-    A directory that is itself a git checkout is never split apart, whatever
-    --depth says: a checkout is one unit or it is nothing.
+    A root that is itself a git checkout is returned whole, whatever --depth
+    says: a checkout is one unit or it is nothing. (Roots that sit *inside* a
+    checkout are caught earlier, in gc_scan, which asks git about the root
+    before any splitting happens.)
     """
+    if os.path.lexists(os.path.join(root, ".git")):
+        return [root]
     found = []
     frontier = [(root, 0)]
     while frontier:
@@ -682,12 +712,19 @@ def gc_scan(options):
         if not os.path.isdir(root):
             errors.append("root is not a directory: {0}".format(root))
             continue
-        for path in gc_candidates(root, options["depth"]):
-            queue.append((root, path))
+        atomic = checkout_root_at(root, options["git_timeout"])
+        if atomic is not None:
+            # A root that is, or sits inside, a git checkout is never split:
+            # the checkout is judged as one unit, so it can never be scored
+            # as "0 git checkouts" and reclaimed piece by piece.
+            queue.append((root, root, atomic))
+        else:
+            for path in gc_candidates(root, options["depth"]):
+                queue.append((root, path, None))
     # Verifying a large accumulation site is minutes of git calls. A scan that
     # says nothing for that long is indistinguishable from a hang.
     total_candidates = len(queue)
-    for index, (root, path) in enumerate(queue, 1):
+    for index, (root, path, atomic) in enumerate(queue, 1):
         if options["progress"]:
             sys.stderr.write("[{0}/{1}] {2}\n".format(
                 index, total_candidates, path))
@@ -752,7 +789,25 @@ def gc_scan(options):
             } for detail in stats["errors"][:5]]
             records.append(record)
             continue
-        if not stats["checkouts"]:
+        if atomic is not None:
+            # The root is (inside) a checkout: judge the checkout itself, not
+            # the pieces a split would have produced. But never discard the
+            # nested checkouts the scan already found: every nested checkout
+            # must also be unreachable before anything is collected, so a
+            # gitignored nested repo with unpushed work keeps the whole root.
+            judge_paths = [atomic] + [
+                c for c in stats["checkouts"] if c != atomic]
+            record["checkouts"] = judge_paths
+            record["evidence"].append({
+                "check": "root-checkout",
+                "command": "git rev-parse --show-toplevel",
+                "exit_code": 0, "result": "atomic",
+                "detail": "root is inside a git checkout ({0}); judged as one "
+                          "unit, never split".format(atomic),
+            })
+        else:
+            judge_paths = stats["checkouts"]
+        if not judge_paths:
             record["verdict"] = "unreachable"
             record["verdict_reason"] = (
                 "no git checkout in subtree: age and budget only")
@@ -764,11 +819,11 @@ def gc_scan(options):
             }]
             records.append(record)
             continue
-        if len(stats["checkouts"]) > options["max_checkouts"]:
+        if len(judge_paths) > options["max_checkouts"]:
             record["verdict"] = "unknown"
             record["verdict_reason"] = (
                 "{0} git checkouts exceeds --max-checkouts {1}".format(
-                    len(stats["checkouts"]), options["max_checkouts"]))
+                    len(judge_paths), options["max_checkouts"]))
             record["evidence"] = [{
                 "check": "git-checkouts", "command": "scan for .git",
                 "exit_code": None, "result": "unknown",
@@ -777,7 +832,7 @@ def gc_scan(options):
             records.append(record)
             continue
         verdicts = []
-        for repo in stats["checkouts"]:
+        for repo in judge_paths:
             verdict, evidence = checkout_reachability(
                 repo, options, remote_cache)
             verdicts.append(verdict)
@@ -791,17 +846,17 @@ def gc_scan(options):
             record["verdict"] = "unknown"
             record["verdict_reason"] = (
                 "git could not answer for {0}".format(
-                    stats["checkouts"][len(verdicts) - 1]))
+                    judge_paths[len(verdicts) - 1]))
         elif "reachable" in verdicts:
             record["verdict"] = "reachable"
-            reached = stats["checkouts"][verdicts.index("reachable")]
+            reached = judge_paths[verdicts.index("reachable")]
             record["verdict_reason"] = (
                 "still reachable: {0}".format(reached))
         else:
             record["verdict"] = "unreachable"
             record["verdict_reason"] = (
                 "{0} checkout(s) clean, pushed and confirmed on a "
-                "remote".format(len(stats["checkouts"])))
+                "remote".format(len(judge_paths)))
         records.append(record)
 
     total = sum(r["size"] for r in records)
@@ -1026,7 +1081,9 @@ def main(argv=None):
                            "the budget says (default 7)")
     p_gc.add_argument("--depth", type=int, default=1, metavar="N",
                       help="how many levels below a root a collection unit may "
-                           "sit (default 1); a git checkout is never split")
+                           "sit (default 1); a git checkout is never split, "
+                           "and a root that is, or sits inside, a checkout is "
+                           "judged atomically as one unit")
     p_gc.add_argument("--protect", action="append", default=[], metavar="PATH",
                       help="extra never-collect paths; adds to the built-in "
                            "denylist, which cannot be removed")
