@@ -1306,6 +1306,62 @@ gc_run --roots "$GC_ATOMIC/pushed-clean" --older-than 0 --budget 0 --collect
 check "collect reclaimed the clean pushed checkout" 1 \
   "$(exists_exit "$GC_ATOMIC/pushed-clean")"
 
+# 9b. A gitignored nested checkout inside a clean+pushed outer root: the
+#     atomic judgment must evaluate the nested checkout too, not just the
+#     toplevel. The first atomic fix judged only the toplevel, so this exact
+#     shape was collected — shredding the nested repo's unpushed work.
+atomic_repo outer-nested
+printf 'vendor/\n' > "$GC_ATOMIC/outer-nested/.gitignore"
+gc_git "$GC_ATOMIC/outer-nested" add .gitignore
+gc_git "$GC_ATOMIC/outer-nested" commit -m "ignore vendor"
+gc_git "$GC_ATOMIC/outer-nested" push origin main
+mkdir -p "$GC_ATOMIC/outer-nested/vendor/nested"
+git init -q -b main "$GC_ATOMIC/outer-nested/vendor/nested" >/dev/null 2>&1
+printf '%s\n' "precious" > "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"
+gc_git "$GC_ATOMIC/outer-nested/vendor/nested" add work.txt
+gc_git "$GC_ATOMIC/outer-nested/vendor/nested" commit -m "unpushed work"
+printf '%s\n' "dirty line" >> "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"
+# The nested repo has no remote: the commit and the dirty line are local-only.
+
+gc_run --roots "$GC_ATOMIC/outer-nested" --older-than 0 --budget 0
+check "nested-checkout root is one candidate" 1 \
+  "$(gc_query total candidates)"
+check "nested-checkout root is kept" "keep" \
+  "$(gc_query decision outer-nested)"
+check "nested-checkout root is reachable" "reachable" \
+  "$(gc_query verdict outer-nested)"
+check "nested-checkout root is decided by rule 3" 3 \
+  "$(gc_query rule outer-nested)"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/outer-nested")][0]; sys.exit(0 if "vendor/nested" in e["verdict_reason"] else 1)' "$WORK/gc.json"
+check "the verdict names the nested checkout that keeps the root" 0 "$?"
+
+gc_run --roots "$GC_ATOMIC/outer-nested" --older-than 0 --budget 0 --collect
+check "collect spared the outer root" 0 \
+  "$(exists_exit "$GC_ATOMIC/outer-nested")"
+check "collect spared the nested unpushed commit" "unpushed work" \
+  "$(git -C "$GC_ATOMIC/outer-nested/vendor/nested" log --format=%s -1)"
+check "collect spared the nested dirty line" 0 \
+  "$(grep -q "dirty line" "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"; echo $?)"
+
+# Submodule variant: committed gitlink, unpushed commits in the submodule
+# working copy. Same code path — the submodule dir carries a .git file.
+git init -q -b main "$GC_ATOMIC/subsrc" >/dev/null 2>&1
+printf '%s\n' "sub" > "$GC_ATOMIC/subsrc/f.txt"
+gc_git "$GC_ATOMIC/subsrc" add f.txt
+gc_git "$GC_ATOMIC/subsrc" commit -m "sub init"
+atomic_repo outer-sub
+gc_git "$GC_ATOMIC/outer-sub" submodule add "$GC_ATOMIC/subsrc" vendor/sub
+gc_git "$GC_ATOMIC/outer-sub" commit -m "add submodule"
+printf '%s\n' "more" >> "$GC_ATOMIC/outer-sub/vendor/sub/f.txt"
+gc_git "$GC_ATOMIC/outer-sub/vendor/sub" commit -am "unpushed in sub"
+
+gc_run --roots "$GC_ATOMIC/outer-sub" --older-than 0 --budget 0 --collect
+check "submodule root is kept" "keep" "$(gc_query decision outer-sub)"
+check "submodule root is reachable" "reachable" \
+  "$(gc_query verdict outer-sub)"
+check "the submodule unpushed commit survived" "unpushed in sub" \
+  "$(git -C "$GC_ATOMIC/outer-sub/vendor/sub" log --format=%s -1)"
+
 echo
 echo "$PASS passed, $FAIL failed"
 rm -rf "$WORK"

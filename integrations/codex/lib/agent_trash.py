@@ -791,9 +791,13 @@ def gc_scan(options):
             continue
         if atomic is not None:
             # The root is (inside) a checkout: judge the checkout itself, not
-            # the pieces a split would have produced.
-            judge_paths = [atomic]
-            record["checkouts"] = [atomic]
+            # the pieces a split would have produced. But never discard the
+            # nested checkouts the scan already found: every nested checkout
+            # must also be unreachable before anything is collected, so a
+            # gitignored nested repo with unpushed work keeps the whole root.
+            judge_paths = [atomic] + [
+                c for c in stats["checkouts"] if c != atomic]
+            record["checkouts"] = judge_paths
             record["evidence"].append({
                 "check": "root-checkout",
                 "command": "git rev-parse --show-toplevel",
