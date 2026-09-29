@@ -137,7 +137,7 @@ assert set(portable) <= {
     "repository", "license", "keywords", "extensions",
 }
 assert portable["name"] == "agent-trash-guard"
-assert portable["version"] == "0.1.3"
+assert portable["version"] == "0.1.4"
 copilot_hooks = json.loads((root / "com.github.copilot" / "hooks" / "hooks.json").read_text())
 assert copilot_hooks["version"] == 1
 copilot_entry = copilot_hooks["hooks"]["PreToolUse"][0]
@@ -174,7 +174,7 @@ for key in ("author", "homepage", "repository", "license"):
 
 gemini_manifest = json.loads((root / "gemini-extension.json").read_text())
 assert gemini_manifest["name"] == "agent-trash-guard"
-assert gemini_manifest["version"] == "0.1.3"
+assert gemini_manifest["version"] == "0.1.4"
 gemini_hooks = json.loads((root / "hooks" / "hooks.json").read_text())
 gemini_entry = gemini_hooks["hooks"]["BeforeTool"][0]
 assert gemini_entry["matcher"] == "run_shell_command"
@@ -186,7 +186,7 @@ assert gemini_entry["hooks"][0]["timeout"] == 8000
 claude_root = root / "integrations" / "claude"
 manifest = json.loads((claude_root / ".claude-plugin" / "plugin.json").read_text())
 assert manifest["name"] == "claude-trash-guard"
-assert manifest["version"] == "0.1.3"
+assert manifest["version"] == "0.1.4"
 
 # Awesome Copilot's Agent Plugins v1.0.0 intake looks for plugin.json at the
 # submitted plugin root (integrations/claude), not inside .claude-plugin/.
@@ -199,7 +199,7 @@ assert set(agent_plugin) <= {
     "repository", "license", "keywords", "extensions",
 }
 assert agent_plugin["name"] == manifest["name"] == "claude-trash-guard"
-assert agent_plugin["version"] == manifest["version"] == "0.1.3"
+assert agent_plugin["version"] == manifest["version"] == "0.1.4"
 
 marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
 marketplace_entry = marketplace["plugins"][0]
@@ -256,7 +256,7 @@ cursor_hooks = json.loads((cursor_root / "hooks" / "hooks.json").read_text())
 assert cursor_hooks["version"] == 1
 cursor_entry = cursor_hooks["hooks"]["beforeShellExecution"][0]
 assert cursor_entry == {"command": 'python3 "${CURSOR_PLUGIN_ROOT}/hooks/cursor_guard.py"', "failClosed": True}
-assert cursor["version"] == "0.1.3"
+assert cursor["version"] == "0.1.4"
 
 for adapter_root in (claude_root, codex_root, cursor_root):
     for relative in (

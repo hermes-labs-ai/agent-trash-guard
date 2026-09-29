@@ -20,7 +20,7 @@ test("bundled detector stays byte-identical to the canonical detector", async ()
 test("bundled CLI reports its OpenClaw manifest version", async () => {
   const cli = new URL("../bin/agent-trash", import.meta.url);
   const { stdout } = await execFileAsync("python3", [fileURLToPath(cli), "--version"]);
-  assert.equal(stdout.trim(), "agent-trash 0.1.3");
+  assert.equal(stdout.trim(), "agent-trash 0.1.4");
 });
 
 test("registers only for exec and fails closed on malformed exec parameters", async () => {
