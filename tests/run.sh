@@ -1343,8 +1343,11 @@ check "collect spared the nested unpushed commit" "unpushed work" \
 check "collect spared the nested dirty line" 0 \
   "$(grep -q "dirty line" "$GC_ATOMIC/outer-nested/vendor/nested/work.txt"; echo $?)"
 
-# Submodule variant: committed gitlink, unpushed commits in the submodule
-# working copy. Same code path — the submodule dir carries a .git file.
+# Submodule variant: the submodule working copy carries unpushed commits and
+# has no remote, while the outer records the submodule's gitlink and is
+# itself clean and pushed. Same code path as the nested repo above - the
+# submodule dir carries a .git file - and the nested judgment is what must
+# keep the root.
 git init -q -b main "$GC_ATOMIC/subsrc" >/dev/null 2>&1
 printf '%s\n' "sub" > "$GC_ATOMIC/subsrc/f.txt"
 gc_git "$GC_ATOMIC/subsrc" add f.txt
@@ -1352,13 +1355,27 @@ gc_git "$GC_ATOMIC/subsrc" commit -m "sub init"
 atomic_repo outer-sub
 gc_git "$GC_ATOMIC/outer-sub" submodule add "$GC_ATOMIC/subsrc" vendor/sub
 gc_git "$GC_ATOMIC/outer-sub" commit -m "add submodule"
+# The clone's origin points at the local subsrc path: drop it so the
+# submodule has unpushed commits and no remote, exactly like the gitignored
+# nested repo above. The outer then records the new gitlink and pushes, so
+# its own status stays clean - otherwise the outer shows ` M vendor/sub`,
+# the dirty check keeps the root, and the nested judgment under test is
+# never consulted (the test would pass on the pre-fix code too).
+git -C "$GC_ATOMIC/outer-sub/vendor/sub" remote remove origin >/dev/null 2>&1
 printf '%s\n' "more" >> "$GC_ATOMIC/outer-sub/vendor/sub/f.txt"
 gc_git "$GC_ATOMIC/outer-sub/vendor/sub" commit -am "unpushed in sub"
+gc_git "$GC_ATOMIC/outer-sub" add vendor/sub
+gc_git "$GC_ATOMIC/outer-sub" commit -m "record submodule work"
+gc_git "$GC_ATOMIC/outer-sub" push origin main
 
+check "outer status is clean, so the nested judgment is isolated" "" \
+  "$(git -C "$GC_ATOMIC/outer-sub" status --porcelain)"
 gc_run --roots "$GC_ATOMIC/outer-sub" --older-than 0 --budget 0 --collect
 check "submodule root is kept" "keep" "$(gc_query decision outer-sub)"
 check "submodule root is reachable" "reachable" \
   "$(gc_query verdict outer-sub)"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/outer-sub")][0]; sys.exit(0 if "vendor/sub" in e["verdict_reason"] else 1)' "$WORK/gc.json"
+check "the verdict names the submodule that keeps the root" 0 "$?"
 check "the submodule unpushed commit survived" "unpushed in sub" \
   "$(git -C "$GC_ATOMIC/outer-sub/vendor/sub" log --format=%s -1)"
 
