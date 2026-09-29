@@ -1177,6 +1177,135 @@ check "collect wrote an audit receipt" 0 "$(exists_exit "$WORK/gc-receipt.jsonl"
 python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[0]); sys.exit(0 if all(e["rule"] and e["reason"] and e["path"] for e in r["entries"]) else 1)' "$WORK/gc-receipt.jsonl"
 check "every receipt entry names a rule, a reason and a path" 0 "$?"
 
+# 9. The trust contract: a root that IS a checkout is judged atomically and
+#    never split. These are the shapes the old splitter destroyed — each is
+#    passed as --roots directly, with the age floor at zero, the budget wide
+#    open and --collect armed, and each must survive byte-identical.
+GC_ATOMIC="$GC_WORK/atomic"
+mkdir -p "$GC_ATOMIC/origins"
+
+atomic_repo() {
+  local name="$1"
+  git init -q --bare "$GC_ATOMIC/origins/$name.git" >/dev/null 2>&1
+  git init -q -b main "$GC_ATOMIC/$name" >/dev/null 2>&1
+  printf '%s\n' "$name" > "$GC_ATOMIC/$name/file.txt"
+  gc_git "$GC_ATOMIC/$name" add file.txt
+  gc_git "$GC_ATOMIC/$name" commit -m "initial"
+  gc_git "$GC_ATOMIC/$name" remote add origin "$GC_ATOMIC/origins/$name.git"
+  gc_git "$GC_ATOMIC/$name" push -u origin main
+}
+
+# The friction-log break, exactly: dirty work plus an unpushed commit, with a
+# healthy remote, passed as the root itself.
+atomic_repo victim
+printf '%s\n' "uncommitted dirty line" >> "$GC_ATOMIC/victim/file.txt"
+printf '%s\n' "new" > "$GC_ATOMIC/victim/new.txt"
+gc_git "$GC_ATOMIC/victim" add new.txt
+gc_git "$GC_ATOMIC/victim" commit -m "unpushed work"
+mkdir -p "$GC_ATOMIC/victim/sub"
+printf '%s\n' "inside" > "$GC_ATOMIC/victim/sub/inner.txt"
+
+atomic_repo unpushed-root
+printf '%s\n' "second" > "$GC_ATOMIC/unpushed-root/file.txt"
+gc_git "$GC_ATOMIC/unpushed-root" commit -am "unpushed work"
+
+atomic_repo stashed-root
+printf '%s\n' "parked" > "$GC_ATOMIC/stashed-root/file.txt"
+gc_git "$GC_ATOMIC/stashed-root" stash push -m "trash-guard-gc-fixture"
+
+# Clean and pushed, then the remote itself is deleted: the checkout passes
+# every local check and dies at ls-remote, which must read as UNKNOWN.
+atomic_repo gone-remote
+rm -rf "$GC_ATOMIC/origins/gone-remote.git"
+
+# An unborn HEAD: no commits at all, on a remote that advertises nothing.
+git init -q --bare "$GC_ATOMIC/origins/unborn.git" >/dev/null 2>&1
+git init -q -b main "$GC_ATOMIC/unborn" >/dev/null 2>&1
+git -C "$GC_ATOMIC/unborn" remote add origin \
+  "$GC_ATOMIC/origins/unborn.git" >/dev/null 2>&1
+
+git init -q --bare "$GC_ATOMIC/bareroot" >/dev/null 2>&1
+
+atomic_repo pushed-clean
+
+gc_run --roots "$GC_ATOMIC/victim" --older-than 0 --budget 0
+check "a checkout passed as the root is one candidate, not split pieces" 1 \
+  "$(gc_query total candidates)"
+check "checkout-as-root is kept" "keep" "$(gc_query decision victim)"
+check "checkout-as-root is reachable" "reachable" "$(gc_query verdict victim)"
+check "checkout-as-root is decided by rule 3" 3 "$(gc_query rule victim)"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/victim")][0]; sys.exit(0 if any(i.get("check")=="root-checkout" and i.get("result")=="atomic" for i in e["evidence"]) else 1)' "$WORK/gc.json"
+check "checkout-as-root evidence records the atomic judgment" 0 "$?"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); e=[x for x in r["entries"] if x["path"].endswith("/victim")][0]; sys.exit(0 if "0 git checkouts" not in json.dumps(e["evidence"]) else 1)' "$WORK/gc.json"
+check "checkout-as-root is never scored as 0 git checkouts" 0 "$?"
+
+# The adversarial run: --collect armed against the live checkout.
+gc_run --roots "$GC_ATOMIC/victim" --older-than 0 --budget 0 --collect
+check "collect against a live checkout exits 0" 0 "$?"
+check "collect spared the checkout directory" 0 \
+  "$(exists_exit "$GC_ATOMIC/victim")"
+check "collect spared the .git directory" 0 \
+  "$(exists_exit "$GC_ATOMIC/victim/.git")"
+check "collect spared the dirty line" 0 \
+  "$(grep -q "uncommitted dirty line" "$GC_ATOMIC/victim/file.txt"; echo $?)"
+check "collect spared the unpushed commit" "unpushed work" \
+  "$(git -C "$GC_ATOMIC/victim" log --format=%s -1)"
+
+# A subdirectory of a checkout as the root: the enclosing checkout is judged,
+# so the dirty tree still keeps it.
+gc_run --roots "$GC_ATOMIC/victim/sub" --older-than 0 --budget 0
+check "a subdir of a checkout is one candidate" 1 \
+  "$(gc_query total candidates)"
+check "a subdir of a checkout is kept" "keep" "$(gc_query decision sub)"
+check "a subdir of a checkout is decided by rule 3" 3 \
+  "$(gc_query rule sub)"
+
+gc_run --roots "$GC_ATOMIC/unpushed-root" --older-than 0 --budget 0 --collect
+check "checkout-as-root with an unpushed commit is kept" "keep" \
+  "$(gc_query decision unpushed-root)"
+check "the unpushed commit survived" "unpushed work" \
+  "$(git -C "$GC_ATOMIC/unpushed-root" log --format=%s -1)"
+
+gc_run --roots "$GC_ATOMIC/stashed-root" --older-than 0 --budget 0 --collect
+check "checkout-as-root with a stash is kept" "keep" \
+  "$(gc_query decision stashed-root)"
+check "the stash survived" 1 \
+  "$(git -C "$GC_ATOMIC/stashed-root" stash list | grep -c trash-guard-gc-fixture)"
+
+gc_run --roots "$GC_ATOMIC/gone-remote" --older-than 0 --budget 0 --collect
+check "checkout-as-root with a deleted remote is kept" "keep" \
+  "$(gc_query decision gone-remote)"
+check "a deleted remote is unknown, not clean" "unknown" \
+  "$(gc_query verdict gone-remote)"
+check "a deleted remote is decided by rule 2" 2 \
+  "$(gc_query rule gone-remote)"
+
+gc_run --roots "$GC_ATOMIC/unborn" --older-than 0 --budget 0 --collect
+check "a checkout with an unborn HEAD is kept" "keep" \
+  "$(gc_query decision unborn)"
+check "an unborn HEAD is decided by rule 3" 3 "$(gc_query rule unborn)"
+
+gc_run --roots "$GC_ATOMIC/bareroot" --older-than 0 --budget 0 --collect
+check "a bare repository as the root is kept" "keep" \
+  "$(gc_query decision bareroot)"
+check "a bare repository is unknown, not clean" "unknown" \
+  "$(gc_query verdict bareroot)"
+check "the bare repository survived" 0 \
+  "$(exists_exit "$GC_ATOMIC/bareroot/HEAD")"
+
+# The shape gc IS allowed to reclaim still works when it is the root: judged
+# atomically, unreachable, collectable under budget.
+gc_run --roots "$GC_ATOMIC/pushed-clean" --older-than 0 --budget 0
+check "a clean pushed checkout as the root is one candidate" 1 \
+  "$(gc_query total candidates)"
+check "a clean pushed checkout as the root is unreachable" "unreachable" \
+  "$(gc_query verdict pushed-clean)"
+check "a clean pushed checkout as the root is collectable" "collect" \
+  "$(gc_query decision pushed-clean)"
+gc_run --roots "$GC_ATOMIC/pushed-clean" --older-than 0 --budget 0 --collect
+check "collect reclaimed the clean pushed checkout" 1 \
+  "$(exists_exit "$GC_ATOMIC/pushed-clean")"
+
 echo
 echo "$PASS passed, $FAIL failed"
 rm -rf "$WORK"
