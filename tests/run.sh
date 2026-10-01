@@ -42,6 +42,19 @@ gemini_event() {
   python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"BeforeTool","tool_name":"run_shell_command","tool_input":{"command":sys.argv[1]}}))' "$1"
 }
 
+# The hook prefers an installed `agent-trash` on PATH over its bundled copy.
+# Bundled-CLI guidance tests run with every PATH entry that provides one
+# removed, so a developer's own install cannot change their result.
+PATH_WITHOUT_AGENT_TRASH="$(python3 - <<'PY'
+import os
+entries = os.environ.get("PATH", "").split(os.pathsep)
+print(os.pathsep.join(
+    entry for entry in entries
+    if not os.access(os.path.join(entry or ".", "agent-trash"), os.X_OK)
+))
+PY
+)"
+
 # --- hook: blocks delete commands ---
 check "hook blocks rm"              2 "$(hook_exit "$(bash_event 'rm -rf build')")"
 check "hook blocks chained rm"      2 "$(hook_exit "$(bash_event 'make && rm -f out.log')")"
@@ -315,10 +328,23 @@ check "Cursor hook uses canonical detector and blocks unsafe input" 0 "$?"
 
 PLUGIN_ERR="$({
   printf '%s' "$(bash_event 'rm -rf build')" |
-    CLAUDE_PLUGIN_ROOT="$REPO_DIR" python3 "$HOOK" 2>&1 >/dev/null
+    PATH="$PATH_WITHOUT_AGENT_TRASH" CLAUDE_PLUGIN_ROOT="$REPO_DIR" \
+      python3 "$HOOK" 2>&1 >/dev/null
 } || true)"
 printf '%s' "$PLUGIN_ERR" | grep -Fq "\"$REPO_DIR/bin/agent-trash\" put <path...>"
 check "plugin guidance uses bundled CLI" 0 "$?"
+
+FAKE_INSTALL="$WORK/installed-agent-trash"
+mkdir -p "$FAKE_INSTALL"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE_INSTALL/agent-trash"
+chmod +x "$FAKE_INSTALL/agent-trash"
+INSTALLED_ERR="$({
+  printf '%s' "$(bash_event 'rm -rf build')" |
+    PATH="$FAKE_INSTALL:$PATH_WITHOUT_AGENT_TRASH" CLAUDE_PLUGIN_ROOT="$REPO_DIR" \
+      python3 "$HOOK" 2>&1 >/dev/null
+} || true)"
+printf '%s' "$INSTALLED_ERR" | grep -Fxq "  agent-trash put <path...>"
+check "installed CLI on PATH takes precedence in guidance" 0 "$?"
 
 PACKAGE_WITH_SPACES="$WORK/Claude package space"
 cp -R "$REPO_DIR/integrations/claude" "$PACKAGE_WITH_SPACES"
@@ -331,6 +357,7 @@ PY
 SPACE_ERR="$({
   printf '%s' "$(bash_event 'rm -rf build')" |
     env -u CLAUDE_PLUGIN_ROOT -u PLUGIN_ROOT -u AGENT_TRASH_GUARD_ROOT \
+      PATH="$PATH_WITHOUT_AGENT_TRASH" \
       python3 "$PACKAGE_WITH_SPACES/hooks/trash_guard.py" 2>&1 >/dev/null
 } || true)"
 printf '%s' "$SPACE_ERR" | grep -Fq "\"$PACKAGE_REALPATH/bin/agent-trash\" put <path...>"
