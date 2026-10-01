@@ -38,12 +38,9 @@ no enforced formatter. Match the existing style in the file you are editing.
 
 - `./tests/run.sh` covers the hook's block/allow matrix, the full
   put/list/restore/empty lifecycle, and the quality rail's review range.
-  Two hook-guidance tests ("plugin guidance uses bundled CLI" and
-  "self-contained package guidance survives spaces") expect the bundled CLI
-  path in the hook's output, but `hooks/trash_guard.py` prints a bare
-  `agent-trash` command when `agent-trash` is already installed on `PATH`, so
-  those two tests can fail on a machine that has a separate `agent-trash`
-  install. Run the suite on a machine or container without one.
+  The bundled-CLI guidance tests remove any installed `agent-trash` from
+  `PATH` for their own hook runs, so a local install does not affect the
+  result.
 - `./tests/recoverability-demo.sh` is a self-contained, deterministic proof
   that a blocked delete and a full trash round-trip lose nothing.
 - `python3 .hermes/hermes_gate_runner.py full --all` runs the same Hermes
